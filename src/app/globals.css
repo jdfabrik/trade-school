@@ -1,26 +1,159 @@
 @import "tailwindcss";
 
+/*
+  Palette. Light mode is warm paper; dark mode is a deep ink that does not glow
+  at you during a long study session. Buy/sell greens and reds are reserved for
+  actual trade signals — never for generic UI state — so that a coloured mark on
+  a chart always means the same thing.
+*/
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --surface-2: #f4f1ea;
+  --border: #e3ddd2;
+  --fg: #16150f;
+  --muted: #6d6658;
+  --accent: #0d6e66;
+  --accent-soft: #d7efec;
+  --buy: #157f3d;
+  --sell: #b4251d;
+  --warn: #8a5a00;
+  --warn-soft: #fdf3dc;
+  --band: rgba(13, 110, 102, 0.1);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --bg: #0c0d10;
+    --surface: #141720;
+    --surface-2: #1b1f2a;
+    --border: #2a2f3c;
+    --fg: #e9e7e2;
+    --muted: #99a0ad;
+    --accent: #3fd9c6;
+    --accent-soft: #10312f;
+    --buy: #4ade80;
+    --sell: #f87171;
+    --warn: #e0b558;
+    --warn-soft: #2a2312;
+    --band: rgba(63, 217, 198, 0.12);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0c0d10;
+  --surface: #141720;
+  --surface-2: #1b1f2a;
+  --border: #2a2f3c;
+  --fg: #e9e7e2;
+  --muted: #99a0ad;
+  --accent: #3fd9c6;
+  --accent-soft: #10312f;
+  --buy: #4ade80;
+  --sell: #f87171;
+  --warn: #e0b558;
+  --warn-soft: #2a2312;
+  --band: rgba(63, 217, 198, 0.12);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-buy: var(--buy);
+  --color-sell: var(--sell);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+
+  --font-display: var(--font-display-family), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body-family), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-family), ui-monospace, SFMono-Regular, monospace;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-wrap: pretty;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+code,
+pre,
+kbd,
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* A quiet inline code chip that reads as code without shouting. */
+.chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05em 0.35em;
+  font-size: 0.875em;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+  width: 100%;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--fg);
 }
