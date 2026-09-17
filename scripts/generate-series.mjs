@@ -87,7 +87,7 @@ const REGIMES = [
   {
     id: "choppy",
     label: "Choppy / range-bound",
-    note: "Mean reversion's home turf. Price oscillates around a slowly rising anchor, so lower-band dips tend to bounce.",
+    note: "Price drifts sideways in a band, so the edges of the range are where the levels are.",
     series: makeSeries({
       seed: 20260917,
       n: N,
@@ -101,7 +101,7 @@ const REGIMES = [
   {
     id: "trending",
     label: "Strong uptrend",
-    note: "The regime that breaks the strategy. Price grinds upward, so every sell at the upper band takes you out of a rally you never get back into.",
+    note: "Price grinds steadily upward, so pullbacks are shallow and the highs keep being taken out.",
     series: makeSeries({
       seed: 777001,
       n: N,
@@ -115,7 +115,7 @@ const REGIMES = [
   {
     id: "crash",
     label: "Volatile, with a crash",
-    note: "High volatility and a deep drawdown in the middle. Watch the bands flare open and the signals dry up exactly when you most want them.",
+    note: "Large daily swings and a sharp fall in the middle, so ordinary movement is wide and stops need room.",
     series: (() => {
       const base = makeSeries({
         seed: 424242,
@@ -146,7 +146,7 @@ await writeFile(
   JSON.stringify({
     kind: "synthetic",
     generatedBy: "scripts/generate-series.mjs",
-    note: "Generated, not real market prices. Deterministic — the same seeds always produce the same numbers.",
+    note: "Made-up prices for practice, not a real market. The same every time, so a chart can be compared with an earlier attempt.",
     dates,
     regimes: REGIMES.map((r) => ({
       id: r.id,

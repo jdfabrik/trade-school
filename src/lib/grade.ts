@@ -1,0 +1,292 @@
+/**
+ * The grader.
+ *
+ * It scores what you CONTROLLED, and deliberately ignores what you did not.
+ * Whether the trade made money is reported separately and never touches the
+ * grade. This is the whole point of the site: a new trader who grades themselves
+ * on profit learns to gamble, because gambling works often enough to feel like
+ * skill. A trader who grades themselves on process learns to trade.
+ *
+ * Nothing here reads your screenshot. A browser cannot look at a chart image and
+ * tell whether the setup was real — so the site does not pretend to. You supply
+ * the numbers; this checks the discipline behind them.
+ */
+import {
+  riskPerUnit,
+  riskPercent,
+  plannedRR,
+  profitLoss,
+  positionSize,
+  type Trade,
+} from "./trade";
+
+export type Letter = "A" | "B" | "C" | "D" | "F";
+
+export interface Check {
+  id: string;
+  label: string;
+  /** Relative importance. Stops matter more than screenshots. */
+  weight: number;
+  /** 0 to 1. Some checks are all-or-nothing, some scale. */
+  score: number;
+  passed: boolean;
+  /** What the trade actually did. */
+  detail: string;
+  /** What to do differently. Shown only when the check fails. */
+  advice: string;
+}
+
+export interface Grade {
+  checks: Check[];
+  failed: Check[];
+  /** Weighted average of the checks, 0 to 1. */
+  score: number;
+  letter: Letter;
+  /** Reported alongside the grade, never folded into it. */
+  profitable: boolean | null;
+  pnl: number;
+  headline: string;
+}
+
+/** The maximum risk this site will call acceptable on a single trade. */
+export const MAX_RISK_PCT = 1;
+
+/** The minimum planned reward:risk this site will call acceptable. */
+export const MIN_RR = 2;
+
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
+function money(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return `${n < 0 ? "−" : ""}$${Math.abs(n).toFixed(2)}`;
+}
+
+export function letterFor(score: number): Letter {
+  if (score >= 0.9) return "A";
+  if (score >= 0.8) return "B";
+  if (score >= 0.7) return "C";
+  if (score >= 0.6) return "D";
+  return "F";
+}
+
+export function gradeTrade(trade: Trade): Grade {
+  const checks: Check[] = [];
+
+  const perUnit = riskPerUnit(trade);
+  const hasStop = Number.isFinite(perUnit);
+  const riskPct = riskPercent(trade);
+  const rr = plannedRR(trade);
+  const pnl = profitLoss(trade);
+
+  /* 1. A stop, decided before entry. Everything else depends on this. */
+  checks.push({
+    id: "stop-set",
+    label: "Stop loss set before entry",
+    weight: 3,
+    score: hasStop ? 1 : 0,
+    passed: hasStop,
+    detail: hasStop
+      ? `Stop at ${money(trade.stop as number)}, ${money(perUnit)} per share from entry.`
+      : "No stop recorded for this trade.",
+    advice:
+      "Decide where you are wrong before you enter, and place the order the moment you are filled. Without a stop you have no defined risk, no position size and no way to measure the trade afterwards.",
+  });
+
+  /* 2. Risk no more than 1% of the account. */
+  let riskScore = 0;
+  let riskDetail = "No stop, so the risk on this trade was undefined.";
+  if (hasStop && Number.isFinite(riskPct)) {
+    // full marks at or under 1%, straight line to zero by 4%
+    riskScore = riskPct <= MAX_RISK_PCT ? 1 : clamp01((4 - riskPct) / 3);
+    riskDetail = `Risked ${money(perUnit * trade.size)}, which is ${riskPct.toFixed(2)}% of a ${money(trade.accountSize)} account.`;
+  }
+  checks.push({
+    id: "risk-size",
+    label: `Risk kept to ${MAX_RISK_PCT}% of the account`,
+    weight: 3,
+    score: riskScore,
+    passed: hasStop && riskPct <= MAX_RISK_PCT + 1e-9,
+    detail: riskDetail,
+    advice:
+      "Cap the loss on any one trade at 1% of your account. At that size a run of ten losses costs you about a tenth of the account — survivable. At 5% the same run is close to fatal.",
+  });
+
+  /* 3. The size must actually follow from the stop. */
+  const intended = hasStop
+    ? positionSize(trade.accountSize, MAX_RISK_PCT, trade.entry, trade.stop as number)
+    : NaN;
+  const sizeRatio = Number.isFinite(intended) ? trade.size / intended : NaN;
+  const sizeOk = Number.isFinite(sizeRatio) && sizeRatio <= 1.25;
+  checks.push({
+    id: "size-matches-stop",
+    label: "Position size follows from the stop",
+    weight: 2,
+    score: Number.isFinite(sizeRatio) ? clamp01(1 - Math.max(0, sizeRatio - 1.25) / 2) : 0,
+    passed: sizeOk,
+    detail: Number.isFinite(intended)
+      ? `Took ${trade.size.toLocaleString("en-US")} units. Risking ${MAX_RISK_PCT}% with this stop allows ${Math.floor(intended).toLocaleString("en-US")}.`
+      : "Cannot check the size without a stop.",
+    advice:
+      "Work out size from the stop, not from a habit or a round number: (account × 1%) ÷ (entry − stop). A wider stop means a smaller position, not a bigger loss.",
+  });
+
+  /* 4. A target worth the risk. */
+  let rrScore = 0;
+  if (Number.isFinite(rr)) {
+    rrScore = rr >= MIN_RR ? 1 : clamp01(rr / MIN_RR);
+  }
+  checks.push({
+    id: "reward-risk",
+    label: `Planned reward at least ${MIN_RR}:1`,
+    weight: 2,
+    score: rrScore,
+    passed: Number.isFinite(rr) && rr >= MIN_RR - 1e-9,
+    detail: Number.isFinite(rr)
+      ? `Target was ${rr.toFixed(2)}:1 against the stop.`
+      : "No target recorded, so the trade had no planned reward.",
+    advice:
+      "Know what you stand to make before you risk anything. At 2:1 you only need to be right a third of the time to break even; at 1:1 you need half, which is a much harder living.",
+  });
+
+  /* 5. A named setup — you knew what you were trading. */
+  const setupNamed = trade.setup.trim().length >= 3;
+  checks.push({
+    id: "setup-named",
+    label: "Setup named before entry",
+    weight: 2,
+    score: setupNamed ? 1 : 0,
+    passed: setupNamed,
+    detail: setupNamed
+      ? `Traded as: ${trade.setup.trim()}.`
+      : "No setup recorded for this trade.",
+    advice:
+      "Name the pattern you are trading before you click. If you cannot name it, you are not trading a setup — you are reacting to a chart, and reactions cannot be reviewed or improved.",
+  });
+
+  /* 6. A reason, written down. Six words or more, or it is not a reason. */
+  const words = trade.planNote.trim().split(/\s+/).filter(Boolean).length;
+  const reasoned = words >= 6;
+  checks.push({
+    id: "reason-written",
+    label: "Reason written down before entry",
+    weight: 2,
+    score: reasoned ? 1 : clamp01(words / 6),
+    passed: reasoned,
+    detail: reasoned
+      ? `${words} words recorded.`
+      : words === 0
+        ? "Nothing written down."
+        : `Only ${words} word${words === 1 ? "" : "s"} written down.`,
+    advice:
+      "Write a sentence explaining why this trade, why now, and what would prove you wrong. It takes fifteen seconds and it is the only thing that makes a losing month reviewable rather than just painful.",
+  });
+
+  /* 7. The stop stayed where you put it. */
+  checks.push({
+    id: "stop-held",
+    label: "Stop not moved against the position",
+    weight: 2,
+    score: trade.stopMovedAgainst ? 0 : 1,
+    passed: !trade.stopMovedAgainst,
+    detail: trade.stopMovedAgainst
+      ? "Stop was widened after the trade moved against you."
+      : "Stop was left where it was placed.",
+    advice:
+      "Moving a stop away from price converts a planned small loss into an unplanned large one. It is the single most common way a new trader turns a bad day into a bad quarter. Move stops toward profit only.",
+  });
+
+  /* 8. Composure — overtrading and revenge trading. */
+  const revenge =
+    trade.minutesSincePriorLoss !== null && trade.minutesSincePriorLoss < 5;
+  const overtrading = trade.tradesToday > 8;
+  const composed = !revenge && !overtrading;
+  checks.push({
+    id: "composure",
+    label: "Not revenge trading or overtrading",
+    weight: 2,
+    score: composed ? 1 : revenge && overtrading ? 0 : 0.4,
+    passed: composed,
+    detail: [
+      revenge
+        ? `Taken ${trade.minutesSincePriorLoss} minute${trade.minutesSincePriorLoss === 1 ? "" : "s"} after a loss.`
+        : null,
+      overtrading ? `Trade number ${trade.tradesToday} of the day.` : null,
+      composed ? `Trade ${trade.tradesToday} of the day, taken calmly.` : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    advice:
+      "After a loss, stand up and let five minutes pass before you look for the next trade. Set a hard cap on the number of trades before the session starts, so boredom cannot add to it later.",
+  });
+
+  /* 9. Evidence — the screenshot. Asked for, but low weight. */
+  const hasShot = Boolean(trade.screenshotId);
+  checks.push({
+    id: "evidence",
+    label: "Screenshot attached",
+    weight: 1,
+    score: hasShot ? 1 : 0,
+    passed: hasShot,
+    detail: hasShot ? "Chart image saved with this trade." : "No screenshot attached.",
+    advice:
+      "Attach the chart as you saw it. In a month you will not remember what the tape looked like, and a journal of numbers without pictures is much harder to learn from.",
+  });
+
+  const totalWeight = checks.reduce((n, c) => n + c.weight, 0);
+  const score = clamp01(
+    checks.reduce((n, c) => n + c.weight * clamp01(c.score), 0) / totalWeight,
+  );
+  const letter = letterFor(score);
+  const failed = checks.filter((c) => !c.passed);
+  const profitable = Number.isFinite(pnl) ? pnl > 0 : null;
+
+  return {
+    checks,
+    failed,
+    score,
+    letter,
+    profitable,
+    pnl,
+    headline: headlineFor(letter, profitable),
+  };
+}
+
+function headlineFor(letter: Letter, profitable: boolean | null): string {
+  if (profitable === null) {
+    return letter === "A" || letter === "B"
+      ? "Well set up. Now let the plan play out."
+      : "Fix this before the trade closes, if you still can.";
+  }
+  const good = letter === "A" || letter === "B";
+  if (good && profitable) return "Good trade, good result. This is the one to repeat.";
+  if (good && !profitable)
+    return "Good trade, bad result. Nothing to fix — this is what a normal loss looks like.";
+  if (!good && profitable)
+    return "Bad trade, good result. This is the dangerous one: it pays you for a habit that will not keep paying.";
+  return "Bad trade, bad result. The loss is the cheap part; the habit is what costs you.";
+}
+
+/** Average grade score across many trades, for the progress page. */
+export function averageScore(grades: Grade[]): number {
+  if (grades.length === 0) return NaN;
+  return grades.reduce((n, g) => n + g.score, 0) / grades.length;
+}
+
+/** Which rubric items you fail most often — the thing to work on next. */
+export function weakestHabits(
+  grades: Grade[],
+  limit = 3,
+): { id: string; label: string; misses: number; advice: string }[] {
+  const tally = new Map<string, { label: string; misses: number; advice: string }>();
+  for (const g of grades) {
+    for (const c of g.failed) {
+      const prior = tally.get(c.id);
+      if (prior) prior.misses += 1;
+      else tally.set(c.id, { label: c.label, misses: 1, advice: c.advice });
+    }
+  }
+  return [...tally.entries()]
+    .map(([id, v]) => ({ id, ...v }))
+    .sort((a, b) => b.misses - a.misses)
+    .slice(0, limit);
+}

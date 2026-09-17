@@ -6,10 +6,9 @@
  * {@link DATA_NOTICE} is the one sentence to use.
  */
 import seriesJson from "./series.json";
-import monthlyJson from "./monthly.json";
 
 export const DATA_NOTICE =
-  "Generated data, not real market prices. Deterministic, so every number here is reproducible.";
+  "These are made-up prices for practice, not a real market. The charts are the same every time you come back, so you can compare one attempt with the next.";
 
 export interface Regime {
   id: string;
@@ -35,14 +34,10 @@ export function defaultRegime(): Regime {
   return REGIMES[0];
 }
 
-export interface MonthlyTable {
-  dates: string[];
-  series: Record<string, number[]>;
-  note: string;
-}
-
-export const MONTHLY: MonthlyTable = {
-  dates: monthlyJson.dates,
-  series: monthlyJson.series as Record<string, number[]>,
-  note: monthlyJson.note,
-};
+/*
+ * `monthly.json` is not imported here on purpose. It was written for the
+ * portfolio and asset-selection labs, which no longer exist, and nothing on the
+ * site reads it. Importing it put all 15 series into the chart drill's client
+ * chunk — JSON is not tree-shaken away once a module in the graph names it.
+ * Anything that needs it again should import it where it is used.
+ */

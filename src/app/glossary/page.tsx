@@ -5,7 +5,7 @@ import { Narrow, PageHeader } from "@/components/ui";
 export const metadata: Metadata = {
   title: "Glossary",
   description:
-    "Every term from the algorithmic trading guide in plain English, with extra context for anyone meeting the idea for the first time.",
+    "Every term this site uses, in plain English, with the context a new trader is usually assumed to already have.",
 };
 
 export default function GlossaryPage() {
@@ -14,7 +14,7 @@ export default function GlossaryPage() {
       <PageHeader
         eyebrow="Reference"
         title="Glossary"
-        lede="The guide's definitions, plus the context it assumes you already have."
+        lede="Plain definitions, plus why each one matters when you have real money on the line. Search it, or filter by topic."
       />
       <GlossaryList />
     </Narrow>

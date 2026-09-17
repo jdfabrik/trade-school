@@ -1,68 +1,92 @@
 /**
- * Integrity checks on the content itself. These catch the failure mode that
- * matters most for a teaching site: content that contradicts the engine, or a
- * quiz answer that disagrees with the reference page it links to.
+ * Integrity checks on the teaching content.
+ *
+ * The one that matters most: every calculator on the site must still reproduce
+ * the worked answer printed in the lesson that explains it. If a tool and a
+ * lesson ever disagreed, a trader would be taught one thing and shown another.
  */
 import { describe, it, expect } from "vitest";
 
-import { FORMULAS } from "./formulas";
-import { QUESTIONS } from "./questions";
+import { LESSONS, lessonBySlug, lessonNeighbours } from "./lessons";
 import { GLOSSARY } from "./glossary";
-import { CONFUSIONS, COMPARISONS } from "./confusions";
-import { CODE_BLOCKS } from "./codeblocks";
-import { SECTIONS } from "./sections";
+import { TOOLS } from "./tools";
+import { QUESTIONS } from "./questions";
+import { SETUPS, SETUP_NAMES } from "./setups";
+import { DATA_NOTICE } from "@/data/index";
 
-const SLUGS = new Set(SECTIONS.map((s) => s.slug));
+const SLUGS = new Set(LESSONS.map((l) => l.slug));
 
-describe("formula calculators agree with the guide's worked answers", () => {
-  for (const f of FORMULAS) {
-    if (!f.example) continue;
-    it(`${f.name}: ${f.example.note}`, () => {
-      // compared at the precision the guide itself prints the answer to
-      expect(f.compute(f.example!.values)).toBeCloseTo(
-        f.example!.expected,
-        f.example!.precision,
+describe("calculators agree with the lessons", () => {
+  for (const tool of TOOLS) {
+    if (!tool.example) continue;
+    it(`${tool.name}: ${tool.example.note}`, () => {
+      expect(tool.compute(tool.example!.values)).toBeCloseTo(
+        tool.example!.expected,
+        tool.example!.precision,
       );
     });
   }
 });
 
 describe("content integrity", () => {
-  it("every id is unique across each collection", () => {
-    const collections = [
-      ["formulas", FORMULAS.map((x) => x.id)],
-      ["questions", QUESTIONS.map((x) => x.id)],
+  it("ids are unique within each collection", () => {
+    const groups = [
+      ["lessons", LESSONS.map((x) => x.slug)],
       ["glossary", GLOSSARY.map((x) => x.id)],
-      ["confusions", CONFUSIONS.map((x) => x.id)],
-      ["comparisons", COMPARISONS.map((x) => x.id)],
-      ["codeblocks", CODE_BLOCKS.map((x) => x.id)],
+      ["tools", TOOLS.map((x) => x.id)],
+      ["questions", QUESTIONS.map((x) => x.id)],
+      ["setups", SETUPS.map((x) => x.id)],
     ] as const;
-    for (const [name, ids] of collections) {
+    for (const [name, ids] of groups) {
       expect(new Set(ids).size, `${name} has duplicate ids`).toBe(ids.length);
     }
   });
 
-  it("every cross-reference points at a section that exists", () => {
-    const refs = [
-      ...QUESTIONS.map((q) => q.sectionSlug),
-      ...FORMULAS.map((f) => f.sectionSlug),
-      ...CONFUSIONS.map((c) => c.sectionSlug),
-      ...COMPARISONS.map((c) => c.sectionSlug),
-      ...CODE_BLOCKS.map((c) => c.sectionSlug),
-    ];
-    for (const slug of refs) {
-      expect(SLUGS.has(slug), `unknown section slug: ${slug}`).toBe(true);
+  it("lessons are numbered 1..9 with no gaps", () => {
+    const numbers = LESSONS.map((l) => l.number).sort((a, b) => a - b);
+    expect(numbers).toEqual(Array.from({ length: 9 }, (_, i) => i + 1));
+  });
+
+  it("every cross-reference points at a lesson that exists", () => {
+    for (const q of QUESTIONS) {
+      expect(SLUGS.has(q.lessonSlug), `question ${q.id} -> ${q.lessonSlug}`).toBe(true);
+    }
+    for (const t of TOOLS) {
+      expect(SLUGS.has(t.lessonSlug), `tool ${t.id} -> ${t.lessonSlug}`).toBe(true);
     }
   });
 
-  it("the fifteen confusion points are numbered 1..15 with no gaps", () => {
-    const numbers = CONFUSIONS.map((c) => c.number).sort((a, b) => a - b);
-    expect(numbers).toEqual(Array.from({ length: 15 }, (_, i) => i + 1));
+  it("prev/next navigation is consistent in both directions", () => {
+    for (let i = 0; i < LESSONS.length; i += 1) {
+      const { prev, next } = lessonNeighbours(LESSONS[i].slug);
+      expect(prev?.slug).toBe(LESSONS[i - 1]?.slug);
+      expect(next?.slug).toBe(LESSONS[i + 1]?.slug);
+    }
+    expect(lessonBySlug("nope")).toBeUndefined();
   });
 
-  it("every question carries an explanation", () => {
+  it("every lesson has a takeaway and at least one block", () => {
+    for (const l of LESSONS) {
+      expect(l.takeaway.length, `${l.slug} takeaway`).toBeGreaterThan(30);
+      expect(l.blocks.length, `${l.slug} blocks`).toBeGreaterThan(0);
+      expect(l.minutes).toBeGreaterThan(0);
+    }
+  });
+
+  it("every lesson table is rectangular", () => {
+    for (const l of LESSONS) {
+      for (const b of l.blocks) {
+        if (!b.table) continue;
+        for (const row of b.table.rows) {
+          expect(row.length, `${l.slug}: ragged table row`).toBe(b.table.head.length);
+        }
+      }
+    }
+  });
+
+  it("every question carries an explanation worth reading", () => {
     for (const q of QUESTIONS) {
-      expect(q.explanation.length, `${q.id} has no explanation`).toBeGreaterThan(20);
+      expect(q.explanation.length, `${q.id}`).toBeGreaterThan(40);
     }
   });
 
@@ -75,43 +99,97 @@ describe("content integrity", () => {
     }
   });
 
-  it("error-spotting questions have both real errors and decoys, and no token is both", () => {
-    const codeQs = QUESTIONS.filter((q) => q.kind === "code-errors");
-    expect(codeQs.length).toBeGreaterThan(0);
-    for (const q of codeQs) {
-      if (q.kind !== "code-errors") continue;
-      expect(q.errors.length).toBeGreaterThan(0);
-      expect(q.decoys.length).toBeGreaterThan(0);
-
-      const errorIds = new Set(q.errors.map((e) => e.tokenId));
-      const decoyIds = new Set(q.decoys.map((d) => d.tokenId));
-      for (const id of errorIds) {
-        expect(decoyIds.has(id), `${q.id}: ${id} is both an error and a decoy`).toBe(false);
-      }
-
-      // every referenced token must actually exist in the rendered code
-      const present = new Set(
-        q.lines.flat().map((t) => t.tokenId).filter((x): x is string => Boolean(x)),
-      );
-      for (const id of [...errorIds, ...decoyIds]) {
-        expect(present.has(id), `${q.id}: token ${id} is not in the code`).toBe(true);
-      }
+  it("judgement scenarios state an outcome separately from the verdict", () => {
+    const judgements = QUESTIONS.filter((q) => q.kind === "judgement");
+    expect(judgements.length).toBeGreaterThanOrEqual(4);
+    for (const q of judgements) {
+      if (q.kind !== "judgement") continue;
+      expect(q.scenario.facts.length).toBeGreaterThan(1);
+      expect(q.scenario.outcome.length).toBeGreaterThan(10);
     }
   });
 
-  it("anything not in the source PDF is marked as authored", () => {
-    // The guide's question section starts at Q5, so Q1-Q4 must be authored.
-    const authored = QUESTIONS.filter((q) => q.source === "authored");
-    expect(authored.length).toBeGreaterThanOrEqual(4);
-    for (const q of QUESTIONS) {
-      expect(["guide", "authored"]).toContain(q.source);
-    }
+  /**
+   * The point of the judgement drill: at least one trade that MADE MONEY must
+   * still be graded a bad trade, and at least one that LOST must be graded good.
+   * Without both, the drill quietly teaches that profit equals quality.
+   */
+  it("includes profitable bad trades and losing good ones", () => {
+    const judgements = QUESTIONS.filter((q) => q.kind === "judgement");
+    const madeMoney = (text: string) => /profit|\bmade\b|\+\d/i.test(text);
+    const lostMoney = (text: string) => /loss|stopped out/i.test(text);
+
+    const profitableButBad = judgements.filter(
+      (q) => q.kind === "judgement" && !q.answer && madeMoney(q.scenario.outcome),
+    );
+    const losingButGood = judgements.filter(
+      (q) => q.kind === "judgement" && q.answer && lostMoney(q.scenario.outcome),
+    );
+
+    expect(profitableButBad.length).toBeGreaterThan(0);
+    expect(losingButGood.length).toBeGreaterThan(0);
   });
 
-  it("numeric questions have a tolerance that is not accidentally negative", () => {
+  it("numeric tolerances are never negative", () => {
     for (const q of QUESTIONS) {
       if (q.kind !== "numeric") continue;
       expect(q.tolerance).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("the setup picker list has no duplicates and excludes the catch-all", () => {
+    // A form offering "something else" pairs it with a free-text field and adds
+    // that option itself, so shipping it in this list too showed it twice.
+    expect(new Set(SETUP_NAMES).size).toBe(SETUP_NAMES.length);
+    expect(SETUP_NAMES).not.toContain("Something else");
+    expect(SETUP_NAMES.length).toBe(SETUPS.length - 1);
+  });
+
+  it("every setup says where the stop goes and how it fails", () => {
+    for (const s of SETUPS) {
+      expect(s.stopPlacement.length, `${s.id}`).toBeGreaterThan(10);
+      expect(s.failureMode.length, `${s.id}`).toBeGreaterThan(10);
+    }
+  });
+
+  it("no content still refers to the programming course this site replaced", () => {
+    const banned =
+      /\bpython\b|pandas|vectorbt|skfolio|yfinance|\bnumpy\b|jupyter|backtest|\brepo\b|\bcodebase\b|localstorage|indexeddb|deterministic/i;
+    const corpus = [
+      ...LESSONS.flatMap((l) => [
+        l.title,
+        l.blurb,
+        l.takeaway,
+        ...l.blocks.flatMap((b) => [
+          b.heading ?? "",
+          ...(b.paragraphs ?? []),
+          ...(b.bullets ?? []),
+          b.callout?.text ?? "",
+          ...(b.table ? [...b.table.head, ...b.table.rows.flat()] : []),
+          ...(b.worked ? [b.worked.title, b.worked.answer, ...b.worked.lines] : []),
+        ]),
+      ]),
+      ...GLOSSARY.flatMap((t) => [t.term, t.meaning, t.detail ?? ""]),
+      ...QUESTIONS.flatMap((q) => [
+        q.prompt,
+        q.explanation,
+        ...(q.kind === "mcq" ? q.choices : []),
+        ...(q.kind === "judgement"
+          ? [q.scenario.summary, q.scenario.outcome, ...q.scenario.facts]
+          : []),
+      ]),
+      ...TOOLS.flatMap((t) => [t.name, t.purpose, t.formula, t.example?.note ?? ""]),
+      ...SETUPS.flatMap((s) => [
+        s.name,
+        s.description,
+        s.stopPlacement,
+        s.failureMode,
+        ...s.conditions,
+      ]),
+      DATA_NOTICE,
+    ];
+    for (const text of corpus) {
+      expect(banned.test(text), `leftover jargon: "${text.slice(0, 70)}"`).toBe(false);
     }
   });
 });

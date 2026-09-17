@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { Source } from "@/content/types";
 
 export function Shell({ children }: { children: ReactNode }) {
   return <div className="mx-auto max-w-6xl px-4 py-10">{children}</div>;
@@ -53,18 +52,32 @@ export function Callout({
   );
 }
 
-/**
- * Marks anything written for this site rather than taken from the source guide.
- * A learner should always be able to tell the difference.
- */
-export function SourceBadge({ source }: { source: Source }) {
-  if (source === "guide") return null;
+/** Letter grade pill, coloured by how good the grade is. */
+export function GradePill({
+  letter,
+  size = "md",
+}: {
+  letter: "A" | "B" | "C" | "D" | "F";
+  size?: "sm" | "md" | "lg";
+}) {
+  const tone =
+    letter === "A" || letter === "B"
+      ? "border-buy/50 bg-buy/10 text-buy"
+      : letter === "C"
+        ? "border-warn/50 bg-warn-soft text-warn"
+        : "border-sell/50 bg-sell/10 text-sell";
+  const dims =
+    size === "lg"
+      ? "h-16 w-16 text-3xl"
+      : size === "sm"
+        ? "h-7 w-7 text-sm"
+        : "h-10 w-10 text-xl";
   return (
     <span
-      title="Written for this site — not in the source study guide"
-      className="ml-2 rounded border border-border px-1.5 py-0.5 align-middle font-mono text-[10px] uppercase tracking-wide text-muted"
+      aria-label={`Grade ${letter}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-xl border font-display font-bold ${tone} ${dims}`}
     >
-      authored
+      {letter}
     </span>
   );
 }

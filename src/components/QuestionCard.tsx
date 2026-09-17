@@ -1,54 +1,55 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { Question } from "@/content/types";
-import { sectionBySlug } from "@/content/sections";
-import { Rich, SourceBadge } from "@/components/ui";
+import { lessonBySlug } from "@/content/lessons";
+import { Rich } from "@/components/ui";
 
-export interface Graded {
-  correct: boolean;
-  /** Partial credit for error-spotting: found N of M, minus decoys clicked. */
-  detail?: string;
-}
+const KIND_LABEL: Record<Question["kind"], string> = {
+  mcq: "multiple choice",
+  truefalse: "true or false",
+  numeric: "work it out",
+  judgement: "judgement call",
+};
 
 function Verdict({
-  graded,
+  correct,
   question,
-  extra,
+  children,
 }: {
-  graded: Graded;
+  correct: boolean;
   question: Question;
-  extra?: React.ReactNode;
+  children?: React.ReactNode;
 }) {
-  const section = sectionBySlug(question.sectionSlug);
+  const lesson = lessonBySlug(question.lessonSlug);
   return (
     <div
-      className={`mt-4 rounded-xl border p-4 text-sm ${
-        graded.correct
-          ? "border-buy/40 bg-buy/5"
-          : "border-sell/40 bg-sell/5"
+      className={`mt-5 rounded-xl border p-4 text-sm sm:p-5 ${
+        correct ? "border-buy/40 bg-buy/5" : "border-sell/40 bg-sell/5"
       }`}
     >
-      <p className={`font-display font-semibold ${graded.correct ? "text-buy" : "text-sell"}`}>
-        {graded.correct ? "Correct" : "Not quite"}
-        {graded.detail && (
-          <span className="ml-2 font-mono text-xs font-normal opacity-80">
-            {graded.detail}
-          </span>
-        )}
+      <p
+        className={`font-display text-base font-semibold ${
+          correct ? "text-buy" : "text-sell"
+        }`}
+      >
+        {correct ? "Correct" : "Not quite"}
       </p>
-      {extra}
-      <p className="mt-2 text-muted">
+
+      {children}
+
+      <p className="mt-3 leading-relaxed text-muted">
         <Rich text={question.explanation} />
       </p>
-      {section && (
-        <p className="mt-2.5">
+
+      {lesson && (
+        <p className="mt-3.5">
           <Link
-            href={`/learn/${section.slug}/`}
+            href={`/learn/${lesson.slug}/`}
             className="text-accent underline underline-offset-4"
           >
-            Read §{section.number} {section.title} →
+            Read lesson {lesson.number}: {lesson.title} &rarr;
           </Link>
         </p>
       )}
@@ -71,120 +72,106 @@ export default function QuestionCard({
   onNext: () => void;
   isLast: boolean;
 }) {
-  const [graded, setGraded] = useState<Graded | null>(null);
-
-  // mcq / truefalse
+  const [correct, setCorrect] = useState<boolean | null>(null);
+  /** mcq uses the index; true/false and judgement use 0 for yes, 1 for no. */
   const [choice, setChoice] = useState<number | null>(null);
-  // numeric
   const [entry, setEntry] = useState("");
-  // code-errors
-  const [picked, setPicked] = useState<Set<string>>(new Set());
 
-  const tokenInfo = useMemo(() => {
-    if (question.kind !== "code-errors") return null;
-    const errors = new Map(question.errors.map((e) => [e.tokenId, e.why]));
-    const decoys = new Map(question.decoys.map((d) => [d.tokenId, d.why]));
-    return { errors, decoys };
-  }, [question]);
+  const answered = correct !== null;
+
+  const canSubmit =
+    question.kind === "numeric" ? entry.trim() !== "" : choice !== null;
 
   function grade() {
-    let result: Graded;
+    let result: boolean;
     switch (question.kind) {
       case "mcq":
-        result = { correct: choice === question.answerIndex };
+        result = choice === question.answerIndex;
         break;
       case "truefalse":
-        result = { correct: (choice === 0) === question.answer };
+      case "judgement":
+        result = (choice === 0) === question.answer;
         break;
       case "numeric": {
         const value = Number(entry.trim());
-        result = {
-          correct:
-            entry.trim() !== "" &&
-            Number.isFinite(value) &&
-            Math.abs(value - question.answer) <= question.tolerance,
-        };
-        break;
-      }
-      case "code-errors": {
-        const found = question.errors.filter((e) => picked.has(e.tokenId)).length;
-        const wrong = question.decoys.filter((d) => picked.has(d.tokenId)).length;
-        result = {
-          correct: found === question.errors.length && wrong === 0,
-          detail: `${found}/${question.errors.length} errors found${
-            wrong > 0 ? `, ${wrong} false positive${wrong === 1 ? "" : "s"}` : ""
-          }`,
-        };
+        result =
+          Number.isFinite(value) &&
+          Math.abs(value - question.answer) <= question.tolerance;
         break;
       }
     }
-    setGraded(result);
-    onGraded(question.id, result.correct);
+    setCorrect(result);
+    onGraded(question.id, result);
   }
 
-  const canSubmit =
-    question.kind === "numeric"
-      ? entry.trim() !== ""
-      : question.kind === "code-errors"
-        ? picked.size > 0
-        : choice !== null;
-
-  function toggleToken(id: string) {
-    if (graded) return;
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  /** Shared look for the two-option and multiple-choice buttons. */
+  function optionClass(chosen: boolean, isAnswer: boolean) {
+    if (answered && isAnswer) return "border-buy bg-buy/10";
+    if (answered && chosen) return "border-sell bg-sell/10";
+    if (chosen) return "border-accent bg-accent-soft";
+    return "border-border hover:border-accent";
   }
 
   return (
     <div className="card p-5 sm:p-6">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <span className="font-mono text-xs uppercase tracking-widest text-muted">
           Question {index + 1} of {total}
         </span>
         <span className="font-mono text-xs uppercase tracking-widest text-muted">
-          {question.kind === "code-errors"
-            ? "find the errors"
-            : question.kind === "truefalse"
-              ? "true or false"
-              : question.kind}
+          {KIND_LABEL[question.kind]}
         </span>
       </div>
 
-      <h2 className="mt-3 font-display text-xl font-semibold">
+      {/* The scenario comes before the question, because the question is
+          always the same sentence and the trade is what you are reading. */}
+      {question.kind === "judgement" && (
+        <div className="mt-4">
+          <p className="text-sm text-muted">{question.scenario.summary}</p>
+
+          <dl className="mt-3 divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface-2">
+            {question.scenario.facts.map((fact, i) => (
+              <div key={i} className="flex gap-3 px-4 py-2.5 text-sm">
+                <dt className="sr-only">Detail {i + 1}</dt>
+                <span aria-hidden className="font-mono text-xs text-muted">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <dd className="leading-relaxed">{fact}</dd>
+              </div>
+            ))}
+          </dl>
+
+          <div className="mt-3 rounded-xl border border-dashed border-border px-4 py-3">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
+              What happened to the money
+            </p>
+            <p className="mt-1 text-sm text-muted">{question.scenario.outcome}</p>
+          </div>
+        </div>
+      )}
+
+      <h2 className="mt-4 font-display text-xl font-semibold">
         <Rich text={question.prompt} />
-        <SourceBadge source={question.source} />
       </h2>
 
-      {/* ---------- multiple choice ---------- */}
       {question.kind === "mcq" && (
         <div role="radiogroup" aria-label="Answer" className="mt-4 space-y-2">
           {question.choices.map((c, i) => {
             const chosen = choice === i;
-            const isAnswer = i === question.answerIndex;
-            const after = graded !== null;
             return (
               <button
                 key={i}
                 type="button"
                 role="radio"
                 aria-checked={chosen}
-                disabled={after}
+                disabled={answered}
                 onClick={() => setChoice(i)}
-                className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left text-sm transition-colors ${
-                  after && isAnswer
-                    ? "border-buy bg-buy/10"
-                    : after && chosen
-                      ? "border-sell bg-sell/10"
-                      : chosen
-                        ? "border-accent bg-accent-soft"
-                        : "border-border hover:border-accent"
-                }`}
+                className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left text-sm transition-colors ${optionClass(
+                  chosen,
+                  i === question.answerIndex,
+                )}`}
               >
-                <span className="font-mono text-xs text-muted">
+                <span aria-hidden className="font-mono text-xs text-muted">
                   {String.fromCharCode(65 + i)}
                 </span>
                 <span>
@@ -196,30 +183,25 @@ export default function QuestionCard({
         </div>
       )}
 
-      {/* ---------- true / false ---------- */}
-      {question.kind === "truefalse" && (
+      {(question.kind === "truefalse" || question.kind === "judgement") && (
         <div role="radiogroup" aria-label="Answer" className="mt-4 flex gap-2">
-          {["True", "False"].map((label, i) => {
+          {(question.kind === "judgement"
+            ? ["Yes, well taken", "No, badly taken"]
+            : ["True", "False"]
+          ).map((label, i) => {
             const chosen = choice === i;
-            const isAnswer = (i === 0) === question.answer;
-            const after = graded !== null;
             return (
               <button
                 key={label}
                 type="button"
                 role="radio"
                 aria-checked={chosen}
-                disabled={after}
+                disabled={answered}
                 onClick={() => setChoice(i)}
-                className={`flex-1 rounded-xl border p-3 font-display font-semibold transition-colors ${
-                  after && isAnswer
-                    ? "border-buy bg-buy/10"
-                    : after && chosen
-                      ? "border-sell bg-sell/10"
-                      : chosen
-                        ? "border-accent bg-accent-soft"
-                        : "border-border hover:border-accent"
-                }`}
+                className={`flex-1 rounded-xl border p-3 font-display text-sm font-semibold transition-colors sm:text-base ${optionClass(
+                  chosen,
+                  (i === 0) === question.answer,
+                )}`}
               >
                 {label}
               </button>
@@ -228,7 +210,6 @@ export default function QuestionCard({
         </div>
       )}
 
-      {/* ---------- numeric ---------- */}
       {question.kind === "numeric" && (
         <div className="mt-4">
           <label className="block text-sm">
@@ -238,10 +219,10 @@ export default function QuestionCard({
                 type="text"
                 inputMode="decimal"
                 value={entry}
-                disabled={graded !== null}
+                disabled={answered}
                 onChange={(e) => setEntry(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && canSubmit && !graded) grade();
+                  if (e.key === "Enter" && canSubmit && !answered) grade();
                 }}
                 className="tabular w-40 rounded-xl border border-border bg-surface-2 px-3 py-2 font-mono"
                 placeholder="0.00"
@@ -254,73 +235,7 @@ export default function QuestionCard({
         </div>
       )}
 
-      {/* ---------- error spotting ---------- */}
-      {question.kind === "code-errors" && tokenInfo && (
-        <>
-          <p className="mt-3 text-xs text-muted">
-            Click the highlighted parts you believe are wrong. Clicking something
-            that is actually correct counts against you.
-          </p>
-          <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-surface-2 p-4">
-            <pre className="text-[13px] leading-7">
-              <code>
-                {question.lines.map((line, li) => (
-                  <div key={li}>
-                    {line.map((tok, ti) => {
-                      if (!tok.tokenId) return <span key={ti}>{tok.text}</span>;
-                      const id = tok.tokenId;
-                      const chosen = picked.has(id);
-                      const after = graded !== null;
-                      const isError = tokenInfo.errors.has(id);
-                      // px + equal negative mx, so highlighting a token does
-                      // not open a gap in the middle of the code
-                      let cls =
-                        "cursor-pointer rounded px-1 -mx-1 underline decoration-dotted decoration-muted/60 underline-offset-4 transition-colors";
-                      if (after) {
-                        cls =
-                          "rounded px-1 -mx-1 " +
-                          (isError
-                            ? chosen
-                              ? "bg-buy/25 ring-1 ring-buy"
-                              : "bg-sell/20 ring-1 ring-sell"
-                            : chosen
-                              ? "bg-sell/25 ring-1 ring-sell line-through"
-                              : "opacity-70");
-                      } else if (chosen) {
-                        cls += " bg-accent-soft ring-1 ring-accent";
-                      } else {
-                        cls += " hover:bg-accent-soft";
-                      }
-                      return (
-                        <span
-                          key={ti}
-                          role="checkbox"
-                          aria-checked={chosen}
-                          aria-label={`Mark ${tok.text} as an error`}
-                          tabIndex={after ? -1 : 0}
-                          onClick={() => toggleToken(id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              toggleToken(id);
-                            }
-                          }}
-                          className={cls}
-                        >
-                          {tok.text}
-                        </span>
-                      );
-                    })}
-                  </div>
-                ))}
-              </code>
-            </pre>
-          </div>
-        </>
-      )}
-
-      {/* ---------- actions ---------- */}
-      {graded === null ? (
+      {correct === null ? (
         <button
           type="button"
           disabled={!canSubmit}
@@ -331,45 +246,30 @@ export default function QuestionCard({
         </button>
       ) : (
         <>
-          <Verdict
-            graded={graded}
-            question={question}
-            extra={
-              question.kind === "numeric" ? (
-                <p className="mt-2">
-                  <span className="text-muted">Answer: </span>
-                  <span className="tabular font-mono font-semibold">
-                    {question.answer}
-                    {question.suffix ? ` ${question.suffix}` : ""}
+          <Verdict correct={correct} question={question}>
+            {question.kind === "numeric" && (
+              <p className="mt-2">
+                <span className="text-muted">Answer: </span>
+                <span className="tabular font-mono font-semibold">
+                  {question.answer}
+                  {question.suffix ? ` ${question.suffix}` : ""}
+                </span>
+                {question.working && (
+                  <span className="tabular mt-1 block font-mono text-xs text-muted">
+                    {question.working}
                   </span>
-                  {question.working && (
-                    <span className="mt-1 block font-mono text-xs text-muted">
-                      {question.working}
-                    </span>
-                  )}
-                </p>
-              ) : question.kind === "code-errors" && tokenInfo ? (
-                <ul className="mt-2 space-y-1.5">
-                  {question.errors.map((e) => (
-                    <li key={e.tokenId} className="flex gap-2 text-xs">
-                      <span className="text-sell">✗</span>
-                      <span className="text-muted">{e.why}</span>
-                    </li>
-                  ))}
-                  {question.decoys
-                    .filter((d) => picked.has(d.tokenId))
-                    .map((d) => (
-                      <li key={d.tokenId} className="flex gap-2 text-xs">
-                        <span className="text-warn">!</span>
-                        <span className="text-muted">
-                          You marked this, but it is fine — {d.why}
-                        </span>
-                      </li>
-                    ))}
-                </ul>
-              ) : null
-            }
-          />
+                )}
+              </p>
+            )}
+            {question.kind === "judgement" && (
+              <p className="mt-2 font-medium">
+                {question.answer
+                  ? "This was a well-taken trade."
+                  : "This was not a well-taken trade."}
+              </p>
+            )}
+          </Verdict>
+
           <button
             type="button"
             onClick={onNext}

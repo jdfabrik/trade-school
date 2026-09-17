@@ -5,10 +5,10 @@ export const dynamic = "force-static";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Algorithmic Trading School",
-    short_name: "Algo School",
+    name: "Trade School",
+    short_name: "Trade School",
     description:
-      "Learn algorithmic trading with Python: Bollinger Bands, portfolio optimization and backtesting, with an interactive lab and graded practice.",
+      "Training for new day traders: log trades with a screenshot and get graded on your process.",
     start_url: "/",
     display: "standalone",
     background_color: "#0c0d10",

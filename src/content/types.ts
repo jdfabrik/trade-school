@@ -1,114 +1,95 @@
 /**
  * Content types.
  *
- * Everything from the study guide is stored as data rather than prose, because
- * each record is consumed three times over: once by a reference page, once by
- * the quiz generator, and once by search. Writing it as JSX would mean
- * maintaining the same fact in three places.
- *
- * `source` marks provenance. "guide" means the fact is in the source PDF.
- * "authored" means it was written for this site — most importantly the four
- * missing questions, since the PDF's question section begins at Q5.
+ * Everything the site teaches is stored as data rather than as prose inside a
+ * page, because each piece gets used more than once: a lesson feeds the lesson
+ * page, the drill questions and the search. Writing it into components would
+ * mean keeping the same fact correct in three places.
  */
-export type Source = "guide" | "authored";
 
-export type UnitId =
-  | "intro"
-  | "assets"
-  | "portfolio"
-  | "bands"
-  | "strategies";
+export type Topic =
+  | "risk"
+  | "sizing"
+  | "stops"
+  | "measuring"
+  | "setups"
+  | "journal"
+  | "psychology";
 
-export interface Unit {
-  id: UnitId;
-  number: string;
-  title: string;
-  covers: string;
-}
-
-export interface Section {
+export interface Lesson {
   slug: string;
   number: number;
   title: string;
+  /** One line, shown on cards and in search results. */
   blurb: string;
-  unit: UnitId | "all";
+  topic: Topic;
+  /** Roughly how long it takes to read. */
+  minutes: number;
+  blocks: Block[];
+  /** The one thing to remember. */
+  takeaway: string;
 }
 
-export interface GlossaryTerm {
+export interface Block {
+  heading?: string;
+  paragraphs?: string[];
+  bullets?: string[];
+  /** A worked number, shown in a box. */
+  worked?: { title: string; lines: string[]; answer: string };
+  callout?: { tone: "warn" | "note"; text: string };
+  table?: { head: string[]; rows: string[][] };
+}
+
+export interface Term {
   id: string;
   term: string;
   meaning: string;
-  /** Extra context written for a newcomer, beyond the guide's one-liner. */
+  /** Why it matters in practice, for someone meeting it for the first time. */
   detail?: string;
-  unit: UnitId;
-  source: Source;
+  topic: Topic;
 }
 
-export interface Formula {
+export interface Tool {
   id: string;
   name: string;
-  /** Plain-text formula as the guide states it. */
-  expression: string;
-  /** Named inputs for the live calculator. */
-  inputs: { key: string; label: string; default: number; step?: number }[];
-  /** Pure function of the inputs, in the same order as `inputs`. */
+  /** Plain-English statement of what it works out. */
+  purpose: string;
+  formula: string;
+  inputs: { key: string; label: string; default: number; step?: number; suffix?: string }[];
   compute: (values: Record<string, number>) => number;
-  /** How to render the result. */
-  unit: "percent" | "ratio" | "bars" | "raw";
-  /**
-   * A worked example straight from the guide, used to self-check the calculator.
-   * `precision` is the number of decimal places the guide states the answer to —
-   * the guide prints Agilent as -6.65%, but the exact value is -6.647618...
-   */
+  /** How to show the answer. */
+  unit: "money" | "units" | "percent" | "ratio";
+  /** A worked example, used as a preset and checked by a test. */
   example?: {
     values: Record<string, number>;
     expected: number;
     precision: number;
     note: string;
   };
-  sectionSlug: string;
-  source: Source;
+  lessonSlug: string;
 }
 
-export interface Confusion {
+export interface Setup {
   id: string;
-  number: number;
-  title: string;
-  body: string;
-  sectionSlug: string;
-  source: Source;
+  name: string;
+  /** What you are actually looking at. */
+  description: string;
+  /** What has to be true before you take it. */
+  conditions: string[];
+  /** Where the stop belongs for this pattern. */
+  stopPlacement: string;
+  /** The way this setup usually goes wrong. */
+  failureMode: string;
 }
 
-export interface Comparison {
-  id: string;
-  a: string;
-  b: string;
-  distinction: string;
-  sectionSlug: string;
-  source: Source;
-}
-
-export interface CodeBlock {
-  id: string;
-  title: string;
-  language: "python";
-  code: string;
-  /** Line-by-line annotations, keyed by zero-based line index. */
-  notes?: { line: number; text: string }[];
-  blurb?: string;
-  sectionSlug: string;
-  source: Source;
-}
-
-/* ---------- quiz ---------- */
+/* ---------------------------------- drills --------------------------------- */
 
 export interface BaseQuestion {
   id: string;
   prompt: string;
   explanation: string;
-  sectionSlug: string;
-  unit: UnitId;
-  source: Source;
+  lessonSlug: string;
+  topic: Topic;
 }
 
 export interface McqQuestion extends BaseQuestion {
@@ -125,28 +106,32 @@ export interface TrueFalseQuestion extends BaseQuestion {
 export interface NumericQuestion extends BaseQuestion {
   kind: "numeric";
   answer: number;
-  /** Absolute tolerance, so 0.645 and 0.6445 both pass. */
+  /** Absolute tolerance, so sensible rounding still counts as right. */
   tolerance: number;
   suffix?: string;
-  /** Shown after submitting: the formula with the numbers substituted in. */
+  /** The sum, shown after answering. */
   working?: string;
 }
 
 /**
- * Error-spotting. The code is split into tokens; some are genuinely wrong and
- * some are the guide's explicit NON-errors, which are there to be left alone.
- * Clicking a decoy costs you, because telling the two apart is the whole skill.
+ * Show a trade and ask whether it was well taken. The catch is that some of
+ * these made money and were still bad trades, which is the habit the drill is
+ * built to break.
  */
-export interface CodeErrorQuestion extends BaseQuestion {
-  kind: "code-errors";
-  /** Lines of code, each an array of tokens. */
-  lines: { text: string; tokenId?: string }[][];
-  errors: { tokenId: string; why: string }[];
-  decoys: { tokenId: string; why: string }[];
+export interface JudgementQuestion extends BaseQuestion {
+  kind: "judgement";
+  scenario: {
+    summary: string;
+    facts: string[];
+    /** What happened to the money. Deliberately not the answer. */
+    outcome: string;
+  };
+  /** Was this a well-taken trade? */
+  answer: boolean;
 }
 
 export type Question =
   | McqQuestion
   | TrueFalseQuestion
   | NumericQuestion
-  | CodeErrorQuestion;
+  | JudgementQuestion;

@@ -4,82 +4,46 @@ export default function SiteFooter() {
   return (
     <footer className="mt-16 border-t border-border bg-surface">
       <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="rounded-xl border border-border bg-warn-soft px-4 py-3 text-sm text-warn">
-          <strong className="font-semibold">Not investment advice.</strong> This is
-          teaching material. The strategy taught here loses money in plenty of
-          markets — the guide&rsquo;s own demo shows a passive $10,000 falling to
-          $9,964. Backtested results are not future results.
+        <div className="rounded-xl border border-warn/30 bg-warn-soft px-4 py-3 text-sm text-warn">
+          <strong className="font-semibold">Practice material, not advice.</strong>{" "}
+          Nothing here is a recommendation to buy or sell anything. Most people who
+          try day trading lose money. Never risk money you need.{" "}
+          <Link href="/reality/" className="underline underline-offset-4">
+            The honest version →
+          </Link>
         </div>
 
         <div className="mt-8 grid gap-8 text-sm sm:grid-cols-3">
           <div>
-            <h2 className="font-display text-sm font-semibold">Study</h2>
-            <ul className="mt-2 space-y-1.5 text-muted">
-              <li>
-                <Link href="/learn/overview/" className="hover:text-fg">
-                  All sections
-                </Link>
-              </li>
-              <li>
-                <Link href="/glossary/" className="hover:text-fg">
-                  Glossary
-                </Link>
-              </li>
-              <li>
-                <Link href="/formulas/" className="hover:text-fg">
-                  Formulas &amp; calculators
-                </Link>
-              </li>
-              <li>
-                <Link href="/learn/rapid-review/" className="hover:text-fg">
-                  Rapid review
-                </Link>
-              </li>
-            </ul>
-          </div>
-          <div>
             <h2 className="font-display text-sm font-semibold">Practise</h2>
             <ul className="mt-2 space-y-1.5 text-muted">
-              <li>
-                <Link href="/lab/bollinger/" className="hover:text-fg">
-                  Bollinger lab
-                </Link>
-              </li>
-              <li>
-                <Link href="/quiz/" className="hover:text-fg">
-                  Graded drills
-                </Link>
-              </li>
-              <li>
-                <Link href="/quiz/review/" className="hover:text-fg">
-                  Weak spots
-                </Link>
-              </li>
-              <li>
-                <Link href="/code/" className="hover:text-fg">
-                  Annotated code
-                </Link>
-              </li>
+              <li><Link href="/journal/" className="hover:text-fg">Log a trade</Link></li>
+              <li><Link href="/journal/history/" className="hover:text-fg">Your journal</Link></li>
+              <li><Link href="/drills/" className="hover:text-fg">Drills</Link></li>
+              <li><Link href="/drills/chart/" className="hover:text-fg">Chart practice</Link></li>
             </ul>
           </div>
           <div>
-            <h2 className="font-display text-sm font-semibold">About</h2>
+            <h2 className="font-display text-sm font-semibold">Learn</h2>
+            <ul className="mt-2 space-y-1.5 text-muted">
+              <li><Link href="/learn/" className="hover:text-fg">All lessons</Link></li>
+              <li><Link href="/tools/" className="hover:text-fg">Calculators</Link></li>
+              <li><Link href="/glossary/" className="hover:text-fg">Glossary</Link></li>
+              <li><Link href="/reality/" className="hover:text-fg">The odds</Link></li>
+            </ul>
+          </div>
+          <div>
+            <h2 className="font-display text-sm font-semibold">Your data</h2>
             <p className="mt-2 text-muted">
-              Built from a five-page exam study guide. Every calculation on this
-              site runs in your browser, and the engine is pinned by tests to the
-              guide&rsquo;s own worked answers.
+              Your trades and screenshots are saved in this browser and nowhere
+              else. There is no account and no server, so nothing is uploaded.
             </p>
             <p className="mt-2 text-muted">
-              <Link href="/setup/" className="hover:text-fg">
-                How to run the Python yourself →
-              </Link>
+              Clearing your browser data deletes them, and they do not follow you
+              to another device.
             </p>
           </div>
         </div>
-
-        <p className="mt-8 text-xs text-muted">
-          Your quiz progress is stored in this browser only. Nothing is uploaded.
-        </p>
       </div>
     </footer>
   );

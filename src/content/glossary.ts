@@ -1,188 +1,208 @@
-import type { GlossaryTerm } from "./types";
+import type { Term } from "./types";
 
-/**
- * `meaning` is the guide's own wording. `detail` is written for this site, for a
- * reader meeting the idea for the first time — the guide assumes a lecture has
- * already happened, and a newcomer arriving cold has not had one.
- */
-export const GLOSSARY: GlossaryTerm[] = [
+export const GLOSSARY: Term[] = [
   {
-    id: "return",
-    term: "Return",
-    meaning: "Proportional change in value: (end − begin) / begin.",
+    id: "r",
+    term: "R",
+    meaning: "The amount you risked on a trade. One R is your planned loss.",
     detail:
-      "Always a proportion, never a dollar amount. That is what makes a $3 move on a $30 stock comparable to a $300 move on a $3,000 one — both are 10%.",
-    unit: "assets",
-    source: "guide",
+      "The most useful unit in trading. Getting stopped out costs 1R. Hitting a target three times as far away as your stop makes 3R. Because it is measured against your own risk, a +2R trade means the same thing whether you trade $500 or $500,000.",
+    topic: "measuring",
   },
   {
-    id: "monthly-return",
-    term: "Monthly return",
-    meaning: "Proportional change over one month. What .pct_change() computes.",
+    id: "stop",
+    term: "Stop loss",
+    meaning: "A resting order that closes the trade at a price you chose in advance.",
     detail:
-      "Run on a monthly price series, `.pct_change()` gives one return per month — and a NaN in the first slot, because the first month has no month before it.",
-    unit: "assets",
-    source: "guide",
+      "It is the price at which you have decided your idea was wrong. Placed as an actual order, not held in your head — in the moment, with money moving, almost nobody honours a mental stop.",
+    topic: "stops",
   },
   {
-    id: "expected-return",
-    term: "Expected monthly return",
-    meaning: "The long-run (arithmetic) average of monthly returns. .mean()",
+    id: "position-size",
+    term: "Position size",
+    meaning: "How many shares or contracts you take.",
     detail:
-      "'Expected' is a statistician's word for 'average', not a forecast. It is what the asset did on average, offered as the best guess for what it does next.",
-    unit: "assets",
-    source: "guide",
+      "Calculated, never guessed: (account × risk %) ÷ (entry − stop). It is the last thing you decide, not the first.",
+    topic: "sizing",
   },
   {
-    id: "risk",
-    term: "Risk",
-    meaning: "Standard deviation of monthly returns. Higher SD = more volatile = riskier.",
+    id: "risk-per-trade",
+    term: "Risk per trade",
+    meaning: "What one trade can cost you, as a percentage of your whole account.",
     detail:
-      "Note what this definition does NOT say: it does not mean the chance of losing money. A stock that reliably doubles every month has enormous 'risk' by this measure.",
-    unit: "assets",
-    source: "guide",
+      "The number that decides whether you survive a losing streak. Keep it at or under 1%. At 5%, six ordinary losses in a row cost you a quarter of everything.",
+    topic: "risk",
   },
   {
-    id: "risk-free-rate",
-    term: "Risk-free rate",
-    meaning: "Guaranteed return (T-bills, bank interest). Government cannot go bankrupt.",
+    id: "reward-risk",
+    term: "Reward:risk",
+    meaning: "How far the target is compared with how far the stop is.",
     detail:
-      "Quoted annually, so convert before mixing it with monthly returns: 2% annual is 0.02/12 per month.",
-    unit: "assets",
-    source: "guide",
+      "A 2:1 trade stands to make twice what it risks. The higher this is, the less often you need to be right — at 3:1 you can lose three out of four trades and still break even.",
+    topic: "measuring",
   },
   {
-    id: "risk-premium",
-    term: "Risk premium",
-    meaning: "Expected return − risk-free return. Predicted reward for taking risk.",
+    id: "expectancy",
+    term: "Expectancy",
+    meaning: "Your average result per trade, measured in R.",
     detail:
-      "The part of a return you were paid for taking a chance. If an asset returns less than a T-bill, its risk premium is negative and you were not paid at all.",
-    unit: "assets",
-    source: "guide",
+      "Add up your R results and divide by the number of trades. Above zero means you have an edge. Below zero means no amount of clever sizing will save it.",
+    topic: "measuring",
   },
   {
-    id: "sharpe",
-    term: "Sharpe ratio",
-    meaning: "Risk premium per unit of risk. Measure of risk-adjusted performance.",
+    id: "win-rate",
+    term: "Win rate",
+    meaning: "The percentage of your trades that make money.",
     detail:
-      "Lets you compare a calm asset with a wild one. A bigger Sharpe means more reward per unit of volatility endured — higher is better.",
-    unit: "portfolio",
-    source: "guide",
-  },
-  {
-    id: "adj-close",
-    term: "Adjusted close",
-    meaning: "Price adjusted for dividends and splits. Used for returns.",
-    detail:
-      "Without the adjustment a 2-for-1 split looks like the stock halved overnight. Adjusted close rewrites history so the return series reflects what a holder actually earned. It also gets revised over time, which is why your numbers may not match a key exactly.",
-    unit: "assets",
-    source: "guide",
-  },
-  {
-    id: "close",
-    term: "Close",
-    meaning: "Raw traded price. Used for strategies and Bollinger Bands.",
-    detail:
-      "A strategy has to trade at prices that existed. Adjusted closes are retroactively rewritten, so backtesting on them would mean buying at prices nobody could have paid.",
-    unit: "bands",
-    source: "guide",
-  },
-  {
-    id: "floating-shares",
-    term: "Floating shares",
-    meaning: "Shares actually available to the public, not insider-locked.",
-    unit: "assets",
-    source: "guide",
-  },
-  {
-    id: "adj-market-cap",
-    term: "Adjusted market cap",
-    meaning: "Stock price × floating shares.",
-    unit: "assets",
-    source: "guide",
-  },
-  {
-    id: "bollinger-bands",
-    term: "Bollinger Bands",
-    meaning: "Moving average with bands at ± alpha standard deviations.",
-    detail:
-      "Three lines: a moving average in the middle, and one band above and one below, each set a chosen number of standard deviations away. The bands breathe as volatility changes.",
-    unit: "bands",
-    source: "guide",
-  },
-  {
-    id: "benchmark",
-    term: "Benchmark",
-    meaning: "Passive buy-and-hold, used as the comparison line.",
-    detail:
-      "The honest question is never 'did my strategy make money?' but 'did it beat simply buying and holding?' Most do not.",
-    unit: "strategies",
-    source: "guide",
-  },
-  {
-    id: "overfitting",
-    term: "Overfitting",
-    meaning:
-      "Tuning a strategy to one segment of history so it fails in other regimes.",
-    detail:
-      "Search hard enough over enough parameters and you will always find a combination that would have worked beautifully on the past. That is a property of searching, not of the strategy.",
-    unit: "strategies",
-    source: "guide",
-  },
-  {
-    id: "split",
-    term: "Split (range split)",
-    meaning:
-      "One evenly spaced interval of the series, assumed to be a different market regime.",
-    detail:
-      "Not to be confused with a stock split. Here it means slicing the price history into chunks to see whether a strategy survives more than one stretch of market.",
-    unit: "strategies",
-    source: "guide",
-  },
-  {
-    id: "library",
-    term: "Library / package",
-    meaning: "A set of functions and tools. Must be installed AND imported.",
-    detail:
-      "Installing puts the files on the machine, once. Importing makes them available to this session, every time.",
-    unit: "intro",
-    source: "guide",
-  },
-  {
-    id: "module",
-    term: "Module",
-    meaning: "A single Python file inside a package (e.g. skfolio.optimization).",
-    unit: "intro",
-    source: "guide",
-  },
-  {
-    id: "list",
-    term: "List",
-    meaning: "Data combined using square brackets.",
-    unit: "intro",
-    source: "guide",
-  },
-  {
-    id: "mean-reversion",
-    term: "Mean reversion",
-    meaning:
-      "The assumption that a price which has moved far from its average will move back toward it.",
-    detail:
-      "This is the bet the Bollinger strategy makes: buy when price falls far below the average, sell when it rises far above. It fails badly in a sustained trend, where 'far from average' just keeps getting farther.",
-    unit: "bands",
-    source: "authored",
+      "On its own it tells you almost nothing. A 30% win rate at 4:1 is excellent; an 80% win rate where the losers are huge is a slow bankruptcy.",
+    topic: "measuring",
   },
   {
     id: "drawdown",
     term: "Drawdown",
-    meaning: "The fall from a portfolio's peak value to its subsequent trough.",
+    meaning: "How far your account has fallen from its highest point.",
     detail:
-      "Not in the source guide, but it is what `plot_drawdowns` charts, and it is the number that tells you whether a strategy was survivable in practice.",
-    unit: "strategies",
-    source: "authored",
+      "The number that tells you whether a strategy was actually survivable. A record that ends up might still have gone through a 40% fall in the middle, and most people quit before the recovery.",
+    topic: "risk",
+  },
+  {
+    id: "setup",
+    term: "Setup",
+    meaning: "A specific, repeatable situation you decided in advance is worth trading.",
+    detail:
+      "It has conditions you can check, a defined entry, a place the stop goes, and a known way it fails. If you cannot describe it precisely enough for another trader to spot it tomorrow, it is not a setup yet.",
+    topic: "setups",
+  },
+  {
+    id: "edge",
+    term: "Edge",
+    meaning: "A reason your trades should make money over a long run of them.",
+    detail:
+      "Not a feeling and not a good week. An edge is visible as positive expectancy across enough trades — fifty at minimum — that luck is no longer the obvious explanation.",
+    topic: "measuring",
+  },
+  {
+    id: "slippage",
+    term: "Slippage",
+    meaning: "The difference between the price you expected and the price you got.",
+    detail:
+      "Worst when the market is moving fast, which is exactly when your stop is most likely to trigger. Budget for it; a stop is a request, not a guarantee.",
+    topic: "risk",
+  },
+  {
+    id: "spread",
+    term: "Spread",
+    meaning: "The gap between the buy price and the sell price.",
+    detail:
+      "You pay it on every round trip. On a wide-spread instrument you can be down before the price has moved at all, which is why spread matters far more to a day trader than to an investor.",
+    topic: "risk",
+  },
+  {
+    id: "long-short",
+    term: "Long / short",
+    meaning: "Long profits when price rises. Short profits when price falls.",
+    detail:
+      "For a long, the stop sits below your entry. For a short, above it. Everything else about risk and sizing works identically.",
+    topic: "setups",
+  },
+  {
+    id: "moving-average",
+    term: "Moving average",
+    meaning: "The average price over the last so many bars, drawn as a line that moves with price.",
+    detail:
+      "It smooths the jiggle so the direction is easier to see. Traders often watch whether pullbacks stop at one, which is why a stop sometimes goes just beyond it. It describes what price has already done; it does not predict what comes next.",
+    topic: "setups",
+  },
+  {
+    id: "vwap",
+    term: "VWAP",
+    meaning: "The average price paid so far today, weighted by how much traded at each price.",
+    detail:
+      "Short for volume-weighted average price. It is watched because it is roughly where the day's buyers and sellers are level, so losing it or reclaiming it is treated as a change in who is in control. Like any average, it is a description of the session so far, not a signal.",
+    topic: "setups",
+  },
+  {
+    id: "gap",
+    term: "Gap",
+    meaning: "When a price opens well away from where it closed, with no trading in between.",
+    detail:
+      "News overnight is the usual cause. It matters because a stop cannot protect you inside a gap: the next price available may be far past where your stop sat, and the loss is whatever that price turns out to be.",
+    topic: "risk",
+  },
+  {
+    id: "breakeven-stop",
+    term: "Breakeven stop",
+    meaning: "Moving your stop to your entry price once the trade is in profit.",
+    detail:
+      "Legitimate, because it moves toward profit. But not free — ordinary pullbacks will now stop you out of trades that go on to work.",
+    topic: "stops",
+  },
+  {
+    id: "revenge-trading",
+    term: "Revenge trading",
+    meaning: "Entering again immediately after a loss to win the money back.",
+    detail:
+      "One of the most destructive habits there is. The tell is the clock: a trade taken while the last loss is still stinging was chosen by the sting, not by your rules. Stand up, let five minutes pass, and decide again.",
+    topic: "psychology",
+  },
+  {
+    id: "overtrading",
+    term: "Overtrading",
+    meaning: "Taking far more trades than your setups actually produce.",
+    detail:
+      "Driven by boredom rather than opportunity. The tell is that you cannot name the setup for half of them. Cap the number of trades before the session starts.",
+    topic: "psychology",
+  },
+  {
+    id: "tilt",
+    term: "Tilt",
+    meaning: "Trading while angry, rattled or desperate.",
+    detail:
+      "Borrowed from poker. You do not notice it while it is happening, which is why the defence has to be a rule set in advance — a daily loss limit, a break after a loss — rather than a judgement made in the moment.",
+    topic: "psychology",
+  },
+  {
+    id: "fomo",
+    term: "FOMO",
+    meaning: "Chasing a move you have already missed.",
+    detail:
+      "You enter late, with the stop now either miles away or absurdly tight. The move is gone. Waiting costs nothing.",
+    topic: "psychology",
+  },
+  {
+    id: "averaging-down",
+    term: "Averaging down",
+    meaning: "Adding to a position that has moved against you.",
+    detail:
+      "It improves your average price and makes your problem larger. For a day trader with a defined stop it is simply a way of ignoring the stop.",
+    topic: "risk",
+  },
+  {
+    id: "daily-loss-limit",
+    term: "Daily loss limit",
+    meaning: "A fixed point at which you stop trading for the day.",
+    detail:
+      "Three losses, or 3% of the account — set it in advance. The day you most want to override it is the day it is doing its job.",
+    topic: "psychology",
+  },
+  {
+    id: "paper-trading",
+    term: "Paper trading",
+    meaning: "Placing trades without real money, to practise the process.",
+    detail:
+      "Useful for learning mechanics and building a record. It will not teach you how the fear feels, so treat a good paper record as the start rather than the finish.",
+    topic: "journal",
+  },
+  {
+    id: "journal",
+    term: "Trading journal",
+    meaning: "A record of every trade, written while it is fresh.",
+    detail:
+      "Entry, stop, target, size, the setup, why you took it, and a screenshot. Without it you are not learning from experience, you are just accumulating opinions about it.",
+    topic: "journal",
   },
 ];
 
-export function termById(id: string): GlossaryTerm | undefined {
+export function termById(id: string): Term | undefined {
   return GLOSSARY.find((t) => t.id === id);
 }

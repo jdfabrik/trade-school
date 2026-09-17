@@ -1,32 +1,32 @@
 import type { MetadataRoute } from "next";
-import { SECTIONS } from "@/content/sections";
+import { LESSONS } from "@/content/lessons";
 
 // Static export: these are generated once at build time, not per request.
 export const dynamic = "force-static";
 
 const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3100";
 
+/** Pages a trader uses every session rank above the reference material. */
+const PRIMARY = new Set(["/journal/", "/journal/history/", "/drills/", "/drills/chart/"]);
+
 export default function sitemap(): MetadataRoute.Sitemap {
   const routes = [
     "/",
+    "/journal/",
+    "/journal/history/",
     "/learn/",
-    "/lab/",
-    "/lab/bollinger/",
-    "/lab/assets/",
-    "/lab/portfolio/",
-    "/quiz/",
-    "/quiz/review/",
+    ...LESSONS.map((l) => `/learn/${l.slug}/`),
+    "/drills/",
+    "/drills/chart/",
+    "/tools/",
     "/glossary/",
-    "/formulas/",
-    "/code/",
-    "/setup/",
-    ...SECTIONS.map((s) => `/learn/${s.slug}/`),
+    "/reality/",
   ];
 
   return routes.map((path) => ({
     url: `${base}${path}`,
     lastModified: new Date(),
     changeFrequency: "monthly" as const,
-    priority: path === "/" ? 1 : path.startsWith("/lab") ? 0.9 : 0.7,
+    priority: path === "/" ? 1 : PRIMARY.has(path) ? 0.9 : 0.7,
   }));
 }

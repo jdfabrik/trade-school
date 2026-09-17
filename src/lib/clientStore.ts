@@ -8,12 +8,14 @@
  * twice with a flash of the wrong one.
  */
 import { loadProgress, recordAnswer, clearProgress, type Progress } from "./progress";
+import { loadTrades } from "./journal";
+import type { Trade } from "./trade";
 
 /* ---------------------------------- theme --------------------------------- */
 
 export type Theme = "light" | "dark" | null;
 
-const THEME_KEY = "ats:theme";
+const THEME_KEY = "ts:theme";
 let themeListeners: (() => void)[] = [];
 
 function emitTheme() {
@@ -59,8 +61,11 @@ export const themeStore = {
 };
 
 /**
- * Runs before first paint, from a script tag in the document head, so a reader
- * who chose light mode never sees a flash of dark.
+ * Runs before first paint, from a plain inline script that the root layout puts
+ * first in the body, so a reader who chose light mode never sees a flash of
+ * dark. It must stay a raw `<script>`: a `beforeInteractive` next/script is not
+ * inlined by a static export, and {@link themeStore.snapshot} reads the
+ * attribute this sets.
  */
 export const THEME_BOOT_SCRIPT = `try{var t=localStorage.getItem("${THEME_KEY}");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
 
@@ -104,5 +109,40 @@ export const progressStore = {
     clearProgress();
     cached = {};
     emitProgress();
+  },
+};
+
+/* --------------------------------- journal --------------------------------- */
+
+let journalListeners: (() => void)[] = [];
+let cachedTrades: Trade[] | null = null;
+const NO_TRADES: Trade[] = [];
+
+function emitJournal() {
+  for (const l of journalListeners) l();
+}
+
+export const journalStore = {
+  subscribe(listener: () => void) {
+    journalListeners.push(listener);
+    return () => {
+      journalListeners = journalListeners.filter((l) => l !== listener);
+    };
+  },
+
+  /** Stable reference between changes, or useSyncExternalStore loops forever. */
+  snapshot(): Trade[] {
+    if (cachedTrades === null) cachedTrades = loadTrades();
+    return cachedTrades;
+  },
+
+  serverSnapshot(): Trade[] {
+    return NO_TRADES;
+  },
+
+  /** Call after any write through the journal module. */
+  refresh(next: Trade[]) {
+    cachedTrades = next;
+    emitJournal();
   },
 };

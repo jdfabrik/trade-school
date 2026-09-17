@@ -6,7 +6,7 @@
  * still be able to take a quiz — they just will not get a weak-spot list.
  */
 
-const KEY = "ats:progress:v1";
+const KEY = "ts:progress:v1";
 
 export interface QuestionRecord {
   attempts: number;

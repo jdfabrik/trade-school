@@ -2,89 +2,87 @@
 
 Durable choices and the reasoning behind them. Newest last.
 
-## D1 — Content is data, not JSX
+## D1 — The site grades process, never profit
 
-Every fact from the study guide lives in `src/content/*.ts` as a typed record,
-not as prose inside a component. Each record is consumed three times over: by a
-reference page, by the quiz generator, and by search. Writing it as JSX would
-mean maintaining the same fact in three places and letting them drift.
+`gradeTrade()` scores nine things the trader controlled — stop set, risk size, size
+derived from the stop, planned reward, named setup, written reason, stop held,
+composure, screenshot — and the profit or loss is reported in a separate box that
+never touches the score.
 
-The cost is a layer of indirection on the reference pages. The benefit is that a
-quiz question and the section it links to cannot disagree.
+This is the whole product. A beginner who grades themselves on profit learns to
+gamble, because gambling works often enough to feel like skill. The test
+`"an identical trade grades the same whether it won or lost"` in
+`src/lib/grade.test.ts` is the one that must never be weakened.
 
-## D2 — Every calculation runs in the browser, in TypeScript
+## D2 — The site does not read the screenshot, and says so
 
-The site reimplements the semantics of `pandas`, `skfolio` and `vectorbt` rather
-than shelling out to Python.
+There is no server and no vision model here, so a chart image cannot be analysed.
+Rather than imply otherwise, the trader types the numbers and the screenshot is
+stored as their own record. Every page that mentions the image states this plainly.
 
-Forced by the environment: this Mac has none of pandas, numpy, yfinance,
-skfolio, vectorbt, matplotlib or plotly, and `/usr/bin/python3` is 3.9.6 while
-skfolio and vectorbt both need ≥3.10. But it is also the better product — no
-install, no API keys, works on a phone, and the engine becomes unit-testable.
+Claiming to grade a chart image would be the single most dishonest thing this site
+could do, and a beginner would have no way to catch it.
 
-`/setup` documents the real Python path for a learner who wants it, including
-the version trap, because the exam is about the Python.
+## D3 — Everything stays in the trader's browser
 
-## D3 — Vitest, despite neither sibling project having a test runner
+Trades go in `localStorage`, screenshots in IndexedDB. No account, no server, no
+upload. Because the site is a static export, that is a property of how it is built
+rather than a promise someone is asked to trust.
 
-`~/walkers-barbershop` and `~/original-walkers-barbershop-austin` have no test
-runner. This project has one because `~/CLAUDE.md` requires a new test to fail
-before the fix, and because the core of this site is arithmetic with five
-known-correct answers printed in the source guide. An unnoticed sign error in
-`sharpe()` would silently teach the wrong thing to someone learning this for the
-first time.
+The cost is stated wherever it matters: clearing browser data deletes the journal,
+and it does not follow you to another device. The CSV export exists so that is not
+a trap.
 
-Vitest is dev-only and does not enter the static bundle. The check gate is
-`npm run check` → typecheck, lint, test, build.
+## D4 — Content is data, not markup
 
-## D4 — Synthetic market data, labelled as such
+Lessons, glossary, calculators, drill questions and setups live in `src/content/`
+as typed records. Each is consumed more than once — a lesson feeds its page, the
+drill filter and the search — so writing it into components would mean keeping the
+same fact correct in several places.
 
-See `PROVENANCE.md` for the full reasoning. Short version: Yahoo 429s from here,
-the free CSV alternative is behind a bot check, and three synthetic regimes
-teach regime-dependence better than one real series would. Determinism also
-means the tests that pin strategy behaviour stay valid.
+`src/content/content.test.ts` enforces the cross-references, and includes a check
+that no programming jargon has survived from the site this one replaced.
 
-The fallback is labelled on every page that renders it rather than quietly
-passed off as real.
+## D5 — Calculators and lessons share one function
 
-## D5 — Hand-rolled SVG charts, no charting library
+A `Tool` carries its own `compute`, so the worked example printed in a lesson and
+the calculator on `/tools/` cannot drift apart. A test asserts every tool still
+reproduces the answer its lesson prints.
 
-Three reasons. The band envelope with buy/sell markers and a greyed warm-up
-region is specific enough that a general-purpose library would fight it; the
-static-export sibling project has zero runtime dependencies and this matches;
-and a fixed `viewBox` with `vector-effect="non-scaling-stroke"` scales to phone
-width without distorting line weights.
+Consequence, learned the hard way on the first production build: a `Tool` cannot be
+passed from a server component into a client component, because functions do not
+cross that boundary. Pages pass a `toolId` and the client looks it up.
 
-## D6 — localStorage state goes through an external store, not an effect
+## D6 — Browser-storage state goes through an external store
 
-React 19's `react-hooks/set-state-in-effect` rule flagged three `setState`-in-
-`useEffect` calls. Rather than suppress it, `src/lib/clientStore.ts` exposes the
-theme and the quiz progress through `useSyncExternalStore`, and the mobile menu
-derives its open state from the pathname it was opened on.
+React's `set-state-in-effect` rule flags loading `localStorage` inside `useEffect`,
+and it is right to. `src/lib/clientStore.ts` exposes the theme, the drill progress
+and the journal through `useSyncExternalStore`, so the first render already has the
+real value instead of flashing an empty one. The theme additionally gets a
+`beforeInteractive` script so `data-theme` is on the document before first paint.
 
-This is not lint appeasement. Reading localStorage in an effect means rendering
-once with the wrong value and again with the right one — a visible flash of an
-empty score line, and of the wrong theme. The theme additionally gets a
-`beforeInteractive` boot script so the DOM already carries `data-theme` before
-first paint.
+`snapshot()` caches its result, because `useSyncExternalStore` re-renders forever if
+the reference changes on every call.
 
-`progressStore.snapshot()` caches, because `useSyncExternalStore` re-renders
-forever if the snapshot reference changes on every call.
+## D7 — Judgement drills include trades that made money and were still bad
 
-## D7 — The measured behaviour of `<` versus `crossed_below`
+Four of the drill questions describe a trade and ask whether it was well taken. Some
+of the badly-taken ones are profitable and one of the well-taken ones loses. A test
+asserts that both cases exist, because a drill where every good trade wins would
+teach exactly the reflex the site is trying to remove.
 
-The guide says plain `<` causes more trades and more fee drag. Measurement says
-it causes 2–4× more *signals* but usually the same number of *trades*, because
-`from_signals` ignores an entry while already long.
+## D8 — Practice charts are generated, not real market data
 
-The site teaches the guide's rule as the exam answer while showing both counts
-in the lab, and the discrepancy is documented in `PROVENANCE.md` and in the test
-comment in `src/data/data.test.ts`. Teaching material that contradicts its own
-source without saying so is worse than either alternative.
+`scripts/generate-series.mjs` produces deterministic price series from a seeded
+generator. Real data was attempted and is not reachable from this machine — see
+`PROVENANCE.md`. For chart markup practice this is genuinely fine: the drill grades
+where the trader put the stop and target, and the reveal is only ever "what this
+particular series did next". Every page rendering it says it is generated.
 
-## D8 — A `Formula` cannot cross the server/client boundary
+## D9 — This site was rebuilt from a programming tutorial, and the seams were hunted
 
-`Formula` records carry a `compute` function, and functions cannot be passed
-from a Server Component to a Client Component — this failed the first production
-build. `Calculator` therefore takes a `formulaId` and looks the record up
-client-side. Any future component that needs a whole `Formula` must do the same.
+It previously taught Python libraries. The pivot kept the design system, charts,
+storage patterns and test setup, and replaced all content. Because stray references
+would be a real defect in a beginner's trading site, two things guard against them:
+a regex test over all content, and a dedicated copy reviewer that read every page
+looking for developer language in user-facing text.

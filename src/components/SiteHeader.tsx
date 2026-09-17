@@ -6,13 +6,11 @@ import { useState, useSyncExternalStore } from "react";
 import { themeStore } from "@/lib/clientStore";
 
 const NAV = [
+  { href: "/journal/", label: "Log a trade", match: "/journal" },
   { href: "/learn/", label: "Learn", match: "/learn" },
-  { href: "/lab/", label: "Lab", match: "/lab" },
-  { href: "/quiz/", label: "Drill", match: "/quiz" },
+  { href: "/drills/", label: "Drills", match: "/drills" },
+  { href: "/tools/", label: "Calculators", match: "/tools" },
   { href: "/glossary/", label: "Glossary", match: "/glossary" },
-  { href: "/formulas/", label: "Formulas", match: "/formulas" },
-  { href: "/code/", label: "Code", match: "/code" },
-  { href: "/setup/", label: "Setup", match: "/setup" },
 ];
 
 function ThemeToggle() {
@@ -44,9 +42,8 @@ export default function SiteHeader() {
   const pathname = usePathname() || "/";
 
   /*
-   * The mobile menu is derived, not synchronised. Storing the path the menu was
-   * opened on means navigating away closes it automatically — no effect needed,
-   * and no stale-open menu on the new page.
+   * The mobile menu is derived rather than synchronised: storing the path it was
+   * opened on means navigating away closes it, with no effect required.
    */
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   const open = openedAt === pathname;
@@ -55,7 +52,7 @@ export default function SiteHeader() {
     <header className="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
         <Link href="/" className="font-display text-[15px] font-bold tracking-tight">
-          <span className="text-accent">▲</span> Algorithmic Trading School
+          <span className="text-accent">◆</span> Trade School
         </Link>
 
         <nav className="ml-auto hidden items-center gap-1 md:flex" aria-label="Main">
