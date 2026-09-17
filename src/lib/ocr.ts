@@ -124,10 +124,37 @@ export interface ChartRead {
 }
 
 /**
+ * Roughly what the recogniser weighs on first use, in megabytes.
+ *
+ * Worth telling people before it starts: it is a real download on a phone.
+ * After the first run the browser caches it and reading is near-instant.
+ */
+export const READER_DOWNLOAD_MB = 11;
+
+/**
+ * Everything the recogniser needs is served from this site, not from a public
+ * CDN.
+ *
+ * That matters more than it looks. The site tells people their screenshot never
+ * leaves their computer, and by default this library fetches its engine and
+ * language data from a third party — which would have meant their browser
+ * announcing itself to someone else the moment they opened the journal. Serving
+ * it here keeps the claim true.
+ */
+function assetPaths() {
+  const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
+  return {
+    workerPath: `${base}/ocr/worker.min.js`,
+    corePath: `${base}/ocr/`,
+    langPath: `${base}/ocr/lang`,
+  };
+}
+
+/**
  * Run OCR over an image in this browser.
  *
- * Loaded on demand rather than bundled into every page: the recogniser and its
- * language data are several megabytes, and most visits never need them.
+ * Loaded on demand rather than bundled into every page: most visits never need
+ * it, and it is several megabytes.
  */
 export async function readChart(
   image: Blob,
@@ -136,6 +163,7 @@ export async function readChart(
   const { createWorker } = await import("tesseract.js");
 
   const worker = await createWorker("eng", undefined, {
+    ...assetPaths(),
     logger: (m: { status: string; progress: number }) => {
       if (onProgress && typeof m.progress === "number") onProgress(m.progress);
     },

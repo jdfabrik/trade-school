@@ -12,7 +12,7 @@ import { journalStore, rulesStore } from "@/lib/clientStore";
 import { loadAccountSize, saveAccountSize } from "@/lib/rules";
 import { positionSize, riskPercent, riskPerUnit, plannedRR } from "@/lib/trade";
 import { SETUP_NAMES } from "@/content/setups";
-import { readChart, rolesFor } from "@/lib/ocr";
+import { readChart, rolesFor, READER_DOWNLOAD_MB } from "@/lib/ocr";
 import { getShot } from "@/lib/screenshots";
 import type { Trade } from "@/lib/trade";
 
@@ -319,7 +319,8 @@ export default function TradeForm() {
           <p className="mt-1 text-sm text-muted">
             The prices printed on it get read automatically, so you can tap them
             into the questions below instead of typing. It also means that in a
-            month you can still see what the trade actually looked like.
+            month you can still see what the trade actually looked like. The
+            first read downloads about {READER_DOWNLOAD_MB}MB, once.
           </p>
           <div className="mt-4">
             <ScreenshotInput
@@ -362,8 +363,9 @@ export default function TradeForm() {
                   />
                 </div>
                 <p className="mt-1.5 text-xs text-muted">
-                  First time takes a few seconds while the reader downloads. It
-                  runs on your computer, not on a server.
+                  The first time, this downloads about {READER_DOWNLOAD_MB}MB of
+                  reader from this site — worth knowing if you are on mobile
+                  data. After that your browser keeps it and reading is quick.
                 </p>
               </div>
             )}

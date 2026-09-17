@@ -80,12 +80,43 @@ function makeSeries({ seed, n, start, drift, vol, reversion, volOfVol = 0 }) {
   return out;
 }
 
+
+/**
+ * Build real OHLC bars from a close series.
+ *
+ * A single price per bar cannot make a candle, and more importantly it cannot
+ * model a stop being touched inside a bar — which is how stops are actually
+ * hit. Each bar gets an open (the previous close), a high and a low drawn
+ * around the open-to-close body, scaled to how far the price moved.
+ */
+function toCandles(closes, seed) {
+  const next = rng(seed);
+  const bars = [];
+  for (let i = 0; i < closes.length; i += 1) {
+    const close = closes[i];
+    const open = i === 0 ? close * (1 - 0.002 + next() * 0.004) : closes[i - 1];
+    const body = Math.abs(close - open);
+    // wicks scale with the body but never vanish, so a doji still has range
+    const typical = Math.max(body, close * 0.004);
+    const high = Math.max(open, close) + typical * (0.15 + next() * 0.85);
+    const low = Math.min(open, close) - typical * (0.15 + next() * 0.85);
+    bars.push({
+      o: Number(open.toFixed(4)),
+      h: Number(high.toFixed(4)),
+      l: Number(low.toFixed(4)),
+      c: Number(close.toFixed(4)),
+    });
+  }
+  return bars;
+}
+
 const N = 520; // roughly two years of trading days
 const dates = businessDays(N, "2024-01-01");
 
 const REGIMES = [
   {
     id: "choppy",
+    candleSeed: 31337,
     label: "Choppy / range-bound",
     note: "Price drifts sideways in a band, so the edges of the range are where the levels are.",
     series: makeSeries({
@@ -100,6 +131,7 @@ const REGIMES = [
   },
   {
     id: "trending",
+    candleSeed: 90210,
     label: "Strong uptrend",
     note: "Price grinds steadily upward, so pullbacks are shallow and the highs keep being taken out.",
     series: makeSeries({
@@ -114,6 +146,7 @@ const REGIMES = [
   },
   {
     id: "crash",
+    candleSeed: 60607,
     label: "Volatile, with a crash",
     note: "Large daily swings and a sharp fall in the middle, so ordinary movement is wide and stops need room.",
     series: (() => {
@@ -153,6 +186,7 @@ await writeFile(
       label: r.label,
       note: r.note,
       close: r.series,
+      bars: toCandles(r.series, r.candleSeed),
     })),
   }) + "\n",
   "utf8",

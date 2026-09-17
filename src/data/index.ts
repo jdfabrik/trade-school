@@ -10,11 +10,21 @@ import seriesJson from "./series.json";
 export const DATA_NOTICE =
   "These are made-up prices for practice, not a real market. The charts are the same every time you come back, so you can compare one attempt with the next.";
 
+/** One price bar: open, high, low, close. */
+export interface Bar {
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+}
+
 export interface Regime {
   id: string;
   label: string;
   note: string;
   close: number[];
+  /** Full bars, so a candle can be drawn and a stop can be touched intrabar. */
+  bars: Bar[];
   dates: string[];
 }
 
@@ -23,6 +33,7 @@ export const REGIMES: Regime[] = seriesJson.regimes.map((r) => ({
   label: r.label,
   note: r.note,
   close: r.close,
+  bars: r.bars,
   dates: seriesJson.dates,
 }));
 

@@ -30,8 +30,20 @@ export interface Lesson {
   takeaway: string;
 }
 
+/** Interactive pieces a lesson can drop in. Rendered by the widget registry. */
+export type WidgetId =
+  | "candle-anatomy"
+  | "sizing-playground"
+  | "reward-risk-playground"
+  | "stop-noise"
+  | "moving-stop"
+  | "expectancy-simulator"
+  | "streak-simulator";
+
 export interface Block {
   heading?: string;
+  /** An interactive demonstration, shown in place. */
+  widget?: { id: WidgetId; caption?: string };
   paragraphs?: string[];
   bullets?: string[];
   /** A worked number, shown in a box. */
