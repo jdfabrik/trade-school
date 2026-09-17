@@ -9,6 +9,7 @@
  */
 import { loadProgress, recordAnswer, clearProgress, type Progress } from "./progress";
 import { loadTrades } from "./journal";
+import { loadRules, saveRules, DEFAULT_RULES, type TradingRules } from "./rules";
 import type { Trade } from "./trade";
 
 /* ---------------------------------- theme --------------------------------- */
@@ -144,5 +145,43 @@ export const journalStore = {
   refresh(next: Trade[]) {
     cachedTrades = next;
     emitJournal();
+  },
+};
+
+/* ---------------------------------- rules ---------------------------------- */
+
+let rulesListeners: (() => void)[] = [];
+let cachedRules: TradingRules | null = null;
+
+function emitRules() {
+  for (const l of rulesListeners) l();
+}
+
+export const rulesStore = {
+  subscribe(listener: () => void) {
+    rulesListeners.push(listener);
+    return () => {
+      rulesListeners = rulesListeners.filter((l) => l !== listener);
+    };
+  },
+
+  /** Stable reference between changes, as useSyncExternalStore requires. */
+  snapshot(): TradingRules {
+    if (cachedRules === null) cachedRules = loadRules();
+    return cachedRules;
+  },
+
+  serverSnapshot(): TradingRules {
+    return DEFAULT_RULES;
+  },
+
+  set(next: TradingRules) {
+    cachedRules = saveRules(next);
+    emitRules();
+  },
+
+  reset() {
+    cachedRules = saveRules(DEFAULT_RULES);
+    emitRules();
   },
 };

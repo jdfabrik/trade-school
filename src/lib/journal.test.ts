@@ -68,7 +68,9 @@ describe("csv export", () => {
   it("writes a header plus one row per trade", () => {
     const csv = toCsv([trade({ symbol: "AAA" }), trade({ symbol: "BBB" })]);
     const lines = csv.split("\n");
-    expect(lines[0].startsWith("Date,Symbol,Direction")).toBe(true);
+    // id leads the row so that re-importing a file updates the trades it
+    // already knows about instead of duplicating every one of them
+    expect(lines[0].startsWith("id,Date,Symbol,Direction")).toBe(true);
     // the headings a trader reads, never the field names underneath
     expect(csv).not.toMatch(/planNote|stopMovedAgainst|minutesSincePriorLoss/);
     expect(lines).toHaveLength(3);

@@ -14,7 +14,7 @@ export default function JournalPage() {
       <PageHeader
         eyebrow="Your journal"
         title="Log a trade"
-        lede="Type in a trade you actually took. It gets graded on what you controlled — the stop, the size, the plan — and the money it made or lost is reported separately, because those are two different results."
+        lede="Drop in a screenshot of your chart. The prices on it are read automatically, so you tap them in rather than typing. You get a grade on the decisions you controlled — the money it made or lost is reported separately, because those are two different results."
       />
       <TradeForm />
     </Shell>

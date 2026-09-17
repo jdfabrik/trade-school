@@ -1,754 +1,769 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { ReactNode } from "react";
-import GradeReport, { money } from "@/components/GradeReport";
+import { useMemo, useState, useSyncExternalStore } from "react";
+
 import ScreenshotInput from "@/components/ScreenshotInput";
+import GradeReport, { money } from "@/components/GradeReport";
 import { Callout } from "@/components/ui";
-import { SETUP_NAMES } from "@/content/setups";
-import { journalStore } from "@/lib/clientStore";
-import { MAX_RISK_PCT, MIN_RR, gradeTrade, type Grade } from "@/lib/grade";
+import { gradeTrade } from "@/lib/grade";
 import { addTrade, blankTrade, newTradeId } from "@/lib/journal";
-import {
-  breakevenWinRate,
-  plannedRR,
-  positionSize,
-  riskAmount,
-  riskPercent,
-  riskPerUnit,
-  type Direction,
-  type ExitReason,
-  type Trade,
-} from "@/lib/trade";
+import { journalStore, rulesStore } from "@/lib/clientStore";
+import { loadAccountSize, saveAccountSize } from "@/lib/rules";
+import { positionSize, riskPercent, riskPerUnit, plannedRR } from "@/lib/trade";
+import { SETUP_NAMES } from "@/content/setups";
+import { readChart, rolesFor } from "@/lib/ocr";
+import { getShot } from "@/lib/screenshots";
+import type { Trade } from "@/lib/trade";
 
-const DEFAULTS = blankTrade();
-const OTHER = "__other";
+/* ------------------------------ small pieces ------------------------------ */
 
-/**
- * Today's date, read through an external store so the server render and the
- * first client render agree. A statically exported page is built once: baking
- * the build date into the date field would be wrong by the time anyone used it.
- */
-const todayStore = {
-  subscribe: () => () => {},
-  snapshot: () => new Date().toISOString().slice(0, 10),
-  serverSnapshot: () => "",
-};
-
-interface Fields {
-  date: string | null;
-  symbol: string;
-  direction: Direction;
-  accountSize: string;
-  entry: string;
-  stop: string;
-  target: string;
-  size: string;
-  exit: string;
-  exitReason: ExitReason;
-  setupPick: string;
-  setupOther: string;
-  planNote: string;
-  stopMovedAgainst: boolean;
-  tradesToday: string;
-  minutesSincePriorLoss: string;
-  screenshotId: string | null;
-}
-
-const EMPTY: Fields = {
-  date: null,
-  symbol: "",
-  direction: DEFAULTS.direction,
-  accountSize: String(DEFAULTS.accountSize),
-  entry: "",
-  stop: "",
-  target: "",
-  size: "",
-  exit: "",
-  exitReason: DEFAULTS.exitReason,
-  setupPick: "",
-  setupOther: "",
-  planNote: "",
-  stopMovedAgainst: DEFAULTS.stopMovedAgainst,
-  tradesToday: String(DEFAULTS.tradesToday),
-  minutesSincePriorLoss: "",
-  screenshotId: null,
-};
-
-function toNumber(raw: string): number {
-  const text = raw.trim();
-  if (!text) return NaN;
-  const n = Number(text);
-  return Number.isFinite(n) ? n : NaN;
-}
-
-function orZero(raw: string): number {
-  const n = toNumber(raw);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function orNull(raw: string): number | null {
-  const n = toNumber(raw);
-  return Number.isFinite(n) ? n : null;
-}
-
-const inputClass =
-  "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm";
-
-function Field({
-  id,
+/** One question: a big label, a plain explanation, and the control. */
+function Ask({
   label,
-  hint,
-  error,
+  why,
   children,
+  hint,
 }: {
-  id: string;
   label: string;
-  hint?: string;
-  error?: string | null;
-  children: ReactNode;
+  why: string;
+  children: React.ReactNode;
+  hint?: React.ReactNode;
 }) {
   return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium">
-        {label}
-      </label>
-      {hint && (
-        <p id={`${id}-hint`} className="mt-0.5 text-xs text-muted">
-          {hint}
-        </p>
-      )}
-      <div className="mt-1.5">{children}</div>
-      {error && (
-        <p id={`${id}-error`} className="mt-1 text-sm text-warn">
-          {error}
-        </p>
-      )}
+    <div className="border-t border-border py-5 first:border-t-0 first:pt-0">
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start sm:gap-6">
+        <div className="min-w-0">
+          <h3 className="font-display text-base font-semibold">{label}</h3>
+          <p className="mt-1 text-sm text-muted">{why}</p>
+        </div>
+        <div className="sm:w-56 sm:shrink-0">{children}</div>
+      </div>
+      {hint && <div className="mt-2 text-sm">{hint}</div>}
     </div>
   );
 }
 
-function describe(id: string, hint: boolean, error: boolean): string | undefined {
-  const parts = [hint ? `${id}-hint` : "", error ? `${id}-error` : ""].filter(Boolean);
-  return parts.length ? parts.join(" ") : undefined;
-}
+const priceInput =
+  "tabular w-full rounded-xl border border-border bg-surface px-4 py-3 text-lg font-mono";
 
-function Group({
-  legend,
-  blurb,
-  children,
+function Price({
+  value,
+  onChange,
+  placeholder = "0.00",
+  disabled,
 }: {
-  legend: string;
-  blurb: string;
-  children: ReactNode;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
 }) {
   return (
-    <fieldset className="card p-5">
-      <legend className="px-1 font-display text-base font-semibold">{legend}</legend>
-      <p className="text-sm text-muted">{blurb}</p>
-      <div className="mt-4 space-y-4">{children}</div>
-    </fieldset>
+    <input
+      type="number"
+      inputMode="decimal"
+      step="0.01"
+      value={value}
+      disabled={disabled}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className={`${priceInput} ${disabled ? "opacity-40" : ""}`}
+    />
   );
 }
 
-export default function TradeForm() {
-  const today = useSyncExternalStore(
-    todayStore.subscribe,
-    todayStore.snapshot,
-    todayStore.serverSnapshot,
+/** A two-option answer. Big enough to tap without thinking. */
+function Choice({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { id: string; label: string }[];
+}) {
+  return (
+    <div role="radiogroup" className="flex gap-2">
+      {options.map((o) => {
+        const active = value === o.id;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(o.id)}
+            className={`flex-1 rounded-xl border px-3 py-3 text-sm font-medium transition-colors ${
+              active
+                ? "border-accent bg-accent-soft text-accent"
+                : "border-border hover:border-accent"
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
   );
-  const [fields, setFields] = useState<Fields>(EMPTY);
-  const [tried, setTried] = useState(false);
-  const [saved, setSaved] = useState<{ trade: Trade; grade: Grade } | null>(null);
-  /* Bumped after a save so the screenshot picker unmounts, releasing its
-     preview URL and starting the next trade with no image attached. */
-  const [shotKey, setShotKey] = useState(0);
-  const panelRef = useRef<HTMLDivElement>(null);
+}
 
-  function update<K extends keyof Fields>(key: K, value: Fields[K]) {
-    setFields((prev) => ({ ...prev, [key]: value }));
-    setSaved(null);
+/** Prices found on the screenshot, offered as one-tap answers. */
+function PriceChips({
+  prices,
+  onPick,
+  empty,
+}: {
+  prices: number[];
+  onPick: (value: number) => void;
+  empty?: string;
+}) {
+  if (prices.length === 0) {
+    return empty ? <span className="text-xs text-muted">{empty}</span> : null;
   }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {prices.slice(0, 10).map((p) => (
+        <button
+          key={p}
+          type="button"
+          onClick={() => onPick(p)}
+          className="tabular rounded-lg border border-accent/40 bg-accent-soft px-2.5 py-1 font-mono text-xs text-accent transition-colors hover:border-accent"
+        >
+          {p}
+        </button>
+      ))}
+    </div>
+  );
+}
 
-  const date = fields.date ?? today;
+/* --------------------------------- form ---------------------------------- */
+
+const YES_NO = [
+  { id: "yes", label: "Yes" },
+  { id: "no", label: "No" },
+];
+
+export default function TradeForm() {
+  const rules = useSyncExternalStore(
+    rulesStore.subscribe,
+    rulesStore.snapshot,
+    rulesStore.serverSnapshot,
+  );
+
+  const [shot, setShot] = useState<string | null>(null);
+  const [prices, setPrices] = useState<number[]>([]);
+  const [reading, setReading] = useState<number | null>(null);
+  const [readFailed, setReadFailed] = useState(false);
+  const [direction, setDirection] = useState<"long" | "short">("long");
+  const [entry, setEntry] = useState("");
+  const [stop, setStop] = useState("");
+  const [noStop, setNoStop] = useState(false);
+  const [target, setTarget] = useState("");
+  const [noTarget, setNoTarget] = useState(false);
+  const [exit, setExit] = useState("");
+  const [stillIn, setStillIn] = useState(false);
+  const [size, setSize] = useState("");
+
+  const [plannedStop, setPlannedStop] = useState("yes");
+  const [movedStop, setMovedStop] = useState("no");
+  const [wroteReason, setWroteReason] = useState("yes");
+
+  const [account, setAccount] = useState<number | null>(null);
+  const [editingAccount, setEditingAccount] = useState(false);
+  const [accountText, setAccountText] = useState("");
+
+  const [showMore, setShowMore] = useState(false);
+  const [symbol, setSymbol] = useState("");
+  const [setup, setSetup] = useState("");
+  const [note, setNote] = useState("");
+  const [tradesToday, setTradesToday] = useState("1");
+  const [minutesSince, setMinutesSince] = useState("");
+
+  const [saved, setSaved] = useState<Trade | null>(null);
+
+  // Read the remembered account lazily; loadAccountSize is safe on the server
+  // (it catches the missing window) and this render is the first that has one.
+  const accountSize = account ?? loadAccountSize();
 
   const draft: Trade = useMemo(() => {
-    const setup =
-      fields.setupPick === OTHER ? fields.setupOther.trim() : fields.setupPick.trim();
-    return {
-      id: "draft",
-      date,
-      symbol: fields.symbol.trim().toUpperCase(),
-      direction: fields.direction,
-      accountSize: orZero(fields.accountSize),
-      entry: orZero(fields.entry),
-      stop: orNull(fields.stop),
-      target: orNull(fields.target),
-      size: orZero(fields.size),
-      exit: fields.exitReason === "open" ? null : orNull(fields.exit),
-      exitReason: fields.exitReason,
-      setup,
-      planNote: fields.planNote,
-      stopMovedAgainst: fields.stopMovedAgainst,
-      tradesToday: orZero(fields.tradesToday),
-      minutesSincePriorLoss: orNull(fields.minutesSincePriorLoss),
-      screenshotId: fields.screenshotId ?? undefined,
+    const num = (s: string) => {
+      const n = Number(s);
+      return s.trim() === "" || !Number.isFinite(n) ? null : n;
     };
-  }, [fields, date]);
+    const entryNum = num(entry) ?? 0;
+    const exitNum = stillIn ? null : num(exit);
 
-  const grade = useMemo(() => gradeTrade(draft), [draft]);
+    return {
+      ...blankTrade(),
+      id: saved?.id ?? newTradeId(),
+      symbol: symbol.trim() || "—",
+      direction,
+      accountSize,
+      entry: entryNum,
+      stop: noStop ? null : num(stop),
+      target: noTarget ? null : num(target),
+      size: num(size) ?? 0,
+      exit: exitNum,
+      exitReason: stillIn ? "open" : exitNum === null ? "open" : "manual",
+      // "did you plan the stop before entering" is the honest version of the
+      // stop check: a stop added afterwards is not the same thing
+      setup: setup.trim(),
+      planNote: wroteReason === "yes" ? note.trim() || "Written down before entering." : "",
+      stopMovedAgainst: movedStop === "yes",
+      tradesToday: Number(tradesToday) || 1,
+      minutesSincePriorLoss:
+        minutesSince.trim() === "" ? null : Number(minutesSince) || 0,
+      screenshotId: shot ?? undefined,
+    };
+  }, [
+    accountSize, direction, entry, stop, noStop, target, noTarget, exit, stillIn,
+    size, setup, note, wroteReason, movedStop, tradesToday, minutesSince, shot,
+    symbol, saved,
+  ]);
+
+  // A stop the trader admits they added after entering does not count as having
+  // decided where they were wrong beforehand.
+  const graded = useMemo(() => {
+    const t = plannedStop === "no" ? { ...draft, stop: draft.stop, planNote: draft.planNote } : draft;
+    const g = gradeTrade(t, rules);
+    if (plannedStop === "no") {
+      const check = g.checks.find((c) => c.id === "stop-set");
+      if (check && check.passed) {
+        check.passed = false;
+        check.score = 0;
+        check.detail = "The stop was added after entering, not decided beforehand.";
+        g.failed.unshift(check);
+        const total = g.checks.reduce((n, c) => n + c.weight, 0);
+        g.score = g.checks.reduce((n, c) => n + c.weight * c.score, 0) / total;
+        g.letter =
+          g.score >= 0.9 ? "A" : g.score >= 0.8 ? "B" : g.score >= 0.7 ? "C" : g.score >= 0.6 ? "D" : "F";
+      }
+    }
+    return g;
+  }, [draft, rules, plannedStop]);
 
   const perUnit = riskPerUnit(draft);
-  const hasStop = Number.isFinite(perUnit);
-  const riskAmt = riskAmount(draft);
   const riskPct = riskPercent(draft);
-  const overRisk = Number.isFinite(riskPct) && riskPct > MAX_RISK_PCT;
   const rr = plannedRR(draft);
-  const allowed =
-    draft.stop !== null && draft.accountSize > 0
-      ? positionSize(draft.accountSize, MAX_RISK_PCT, draft.entry, draft.stop)
+  const suggested =
+    !noStop && Number.isFinite(perUnit) && draft.entry > 0
+      ? positionSize(accountSize, rules.maxRiskPct, draft.entry, draft.stop as number)
       : NaN;
-  const allowedUnits = Number.isFinite(allowed) ? Math.floor(allowed) : NaN;
-  const sizeMatches = Number.isFinite(allowedUnits) && draft.size === allowedUnits;
 
-  const entryProblem =
-    draft.entry > 0 ? null : "Enter the price you were actually filled at.";
-  const sizeProblem =
-    draft.size > 0 ? null : "Enter how many shares or contracts you took.";
-  const canSave = !entryProblem && !sizeProblem;
+  const ready = draft.entry > 0 && draft.size > 0;
 
-  function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setTried(true);
-    if (!canSave) return;
-    const trade: Trade = { ...draft, id: newTradeId() };
-    journalStore.refresh(addTrade(trade));
-    setSaved({ trade, grade: gradeTrade(trade) });
-    setFields((prev) => ({ ...prev, screenshotId: null }));
-    setShotKey((n) => n + 1);
-    setTried(false);
-    panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Once the entry is known a stop can only be on one side of it, so the chips
+  // narrow to the prices that could actually be right.
+  const roles = rolesFor(prices, draft.entry > 0 ? draft.entry : null, direction);
+
+  function save() {
+    if (!ready) return;
+    saveAccountSize(accountSize);
+    journalStore.refresh(addTrade(draft));
+    setSaved(draft);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_23rem]">
-      <form onSubmit={submit} noValidate className="space-y-5">
-        <Callout>
-          Everything you log stays in this browser. There is no account and no
-          server, so nothing you type here leaves your computer — and nothing is
-          backed up either.
+  function again() {
+    setSaved(null);
+    setShot(null);
+    setEntry("");
+    setStop("");
+    setTarget("");
+    setExit("");
+    setSize("");
+    setNote("");
+    setNoStop(false);
+    setNoTarget(false);
+    setStillIn(false);
+  }
+
+  /* ------------------------------ saved view ------------------------------ */
+
+  if (saved) {
+    return (
+      <div className="space-y-6">
+        <Callout tone="note">
+          Saved to your journal, in this browser.
         </Callout>
-
-        <Group
-          legend="The trade"
-          blurb="The numbers as they actually happened. Use the prices your broker shows."
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="f-date" label="Date">
-              <input
-                id="f-date"
-                type="date"
-                className={inputClass}
-                value={date}
-                onChange={(e) => update("date", e.target.value)}
-              />
-            </Field>
-            <Field id="f-symbol" label="Symbol" hint="Whatever you traded, such as AAPL.">
-              <input
-                id="f-symbol"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                aria-describedby={describe("f-symbol", true, false)}
-                className={`${inputClass} uppercase`}
-                value={fields.symbol}
-                onChange={(e) => update("symbol", e.target.value)}
-              />
-            </Field>
-          </div>
-
-          <div>
-            <p className="block text-sm font-medium">Direction</p>
-            <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-              {(
-                [
-                  ["long", "Long", "You bought first, hoping to sell higher."],
-                  ["short", "Short", "You sold first, hoping to buy back lower."],
-                ] as const
-              ).map(([value, label, note]) => (
-                <label
-                  key={value}
-                  className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent-soft"
-                >
-                  <input
-                    type="radio"
-                    name="direction"
-                    value={value}
-                    checked={fields.direction === value}
-                    onChange={() => update("direction", value)}
-                    className="mt-0.5"
-                    style={{ accentColor: "var(--accent)" }}
-                  />
-                  <span>
-                    <span
-                      className={`font-medium ${value === "long" ? "text-buy" : "text-sell"}`}
-                    >
-                      {label}
-                    </span>
-                    <span className="block text-xs text-muted">{note}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <Field
-            id="f-account"
-            label="Account size"
-            hint="What the whole account was worth that day. Risk only means something as a share of this."
-          >
-            <input
-              id="f-account"
-              type="number"
-              inputMode="decimal"
-              step="any"
-              min="0"
-              aria-describedby={describe("f-account", true, false)}
-              className={`${inputClass} tabular`}
-              value={fields.accountSize}
-              onChange={(e) => update("accountSize", e.target.value)}
-            />
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field id="f-entry" label="Entry price" error={tried ? entryProblem : null}>
-              <input
-                id="f-entry"
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min="0"
-                aria-invalid={tried && Boolean(entryProblem)}
-                aria-describedby={describe("f-entry", false, tried && Boolean(entryProblem))}
-                className={`${inputClass} tabular`}
-                value={fields.entry}
-                onChange={(e) => update("entry", e.target.value)}
-              />
-            </Field>
-            <Field
-              id="f-stop"
-              label="Stop price"
-              hint="Where you would admit you were wrong."
-            >
-              <input
-                id="f-stop"
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min="0"
-                aria-describedby={describe("f-stop", true, false)}
-                className={`${inputClass} tabular`}
-                value={fields.stop}
-                onChange={(e) => update("stop", e.target.value)}
-              />
-            </Field>
-            <Field
-              id="f-size"
-              label="Size"
-              hint="Shares or contracts."
-              error={tried ? sizeProblem : null}
-            >
-              <input
-                id="f-size"
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min="0"
-                aria-invalid={tried && Boolean(sizeProblem)}
-                aria-describedby={describe("f-size", true, tried && Boolean(sizeProblem))}
-                className={`${inputClass} tabular`}
-                value={fields.size}
-                onChange={(e) => update("size", e.target.value)}
-              />
-            </Field>
-          </div>
-
-          {/* The live arithmetic. This is the part of the page that teaches. */}
-          <div className="rounded-xl border border-border bg-surface-2 p-4">
-            <h3 className="font-mono text-[11px] uppercase tracking-widest text-muted">
-              What you are risking
-            </h3>
-            {hasStop ? (
-              <>
-                <dl className="mt-2 grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <dt className="text-xs text-muted">Per share</dt>
-                    <dd className="tabular mt-0.5 font-semibold">{money(perUnit)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted">Total at risk</dt>
-                    <dd className="tabular mt-0.5 font-semibold">{money(riskAmt)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted">Of the account</dt>
-                    <dd
-                      className={`tabular mt-0.5 font-semibold ${overRisk ? "text-sell" : ""}`}
-                    >
-                      {Number.isFinite(riskPct) ? `${riskPct.toFixed(2)}%` : "—"}
-                    </dd>
-                  </div>
-                </dl>
-                {overRisk && (
-                  <p className="mt-2 text-sm text-sell">
-                    Above {MAX_RISK_PCT}% of the account. Ten losses in a row —
-                    which happens to everyone — would cost you about{" "}
-                    {((1 - Math.pow(1 - riskPct / 100, 10)) * 100).toFixed(0)}% of
-                    everything you have.
-                  </p>
-                )}
-                {Number.isFinite(allowedUnits) && allowedUnits > 0 && (
-                  <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
-                    <p className="text-sm">
-                      Risking {MAX_RISK_PCT}% with this stop allows{" "}
-                      <span className="tabular font-semibold">
-                        {allowedUnits.toLocaleString("en-US")}
-                      </span>{" "}
-                      units.
-                    </p>
-                    <button
-                      type="button"
-                      disabled={sizeMatches}
-                      onClick={() => update("size", String(allowedUnits))}
-                      className="rounded-lg border border-accent px-3 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-accent-soft disabled:cursor-default disabled:border-border disabled:text-muted"
-                    >
-                      {sizeMatches ? "Size already matches" : "Use this size"}
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="mt-2 text-sm text-muted">
-                Fill in an entry and a stop and your risk appears here, in dollars
-                and as a share of the account.
-              </p>
-            )}
-          </div>
-
-          {!hasStop && draft.entry > 0 && (
-            <Callout tone="warn">
-              No stop, so this trade has no defined risk. You cannot work out a
-              position size from it, you cannot measure the result in R afterwards,
-              and the loss is whatever the market decides it is. You can still log
-              the trade — but that is what you are logging.
-            </Callout>
-          )}
-        </Group>
-
-        <Group
-          legend="Your plan"
-          blurb="What you decided before you clicked. Written afterwards it is a story; written beforehand it is something you can review."
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="f-setup" label="Setup">
-              <select
-                id="f-setup"
-                className={inputClass}
-                value={fields.setupPick}
-                onChange={(e) => update("setupPick", e.target.value)}
-              >
-                <option value="">Choose a setup…</option>
-                {SETUP_NAMES.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-                <option value={OTHER}>Something else</option>
-              </select>
-            </Field>
-            {fields.setupPick === OTHER && (
-              <Field
-                id="f-setup-other"
-                label="Name it yourself"
-                hint="The name you would use again when you saw the same thing."
-              >
-                <input
-                  id="f-setup-other"
-                  type="text"
-                  aria-describedby={describe("f-setup-other", true, false)}
-                  className={inputClass}
-                  value={fields.setupOther}
-                  onChange={(e) => update("setupOther", e.target.value)}
-                />
-              </Field>
-            )}
-            <Field
-              id="f-target"
-              label="Target price"
-              hint="Where you planned to take the profit."
-            >
-              <input
-                id="f-target"
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min="0"
-                aria-describedby={describe("f-target", true, false)}
-                className={`${inputClass} tabular`}
-                value={fields.target}
-                onChange={(e) => update("target", e.target.value)}
-              />
-            </Field>
-          </div>
-
-          <div className="rounded-xl border border-border bg-surface-2 p-4 text-sm">
-            {Number.isFinite(rr) ? (
-              <>
-                <p>
-                  Planned reward against risk:{" "}
-                  <span className="tabular font-semibold">{rr.toFixed(2)}:1</span>
-                  {rr < MIN_RR && (
-                    <span className="text-warn">
-                      {" "}
-                      — thinner than the {MIN_RR}:1 this site asks for.
-                    </span>
-                  )}
-                </p>
-                <p className="mt-1 text-muted">
-                  At that ratio you need to be right{" "}
-                  {breakevenWinRate(rr).toFixed(0)}% of the time just to break even.
-                </p>
-              </>
-            ) : (
-              <p className="text-muted">
-                Add a stop and a target to see what you stood to make against what
-                you stood to lose.
-              </p>
-            )}
-          </div>
-
-          <Field
-            id="f-plan"
-            label="Why you took it"
-            hint="A sentence or two, written before you entered: why this, why now, and what would prove you wrong."
-          >
-            <textarea
-              id="f-plan"
-              rows={3}
-              aria-describedby={describe("f-plan", true, false)}
-              className={inputClass}
-              value={fields.planNote}
-              onChange={(e) => update("planNote", e.target.value)}
-            />
-          </Field>
-
-          <div>
-            <p className="block text-sm font-medium">Screenshot of your chart</p>
-            <div className="mt-1.5">
-              <ScreenshotInput
-                key={shotKey}
-                value={fields.screenshotId}
-                onChange={(id) => update("screenshotId", id)}
-              />
-            </div>
-          </div>
-        </Group>
-
-        <Group
-          legend="How it went"
-          blurb="Fill this in once the trade is finished. An open trade can still be graded on everything you have already decided."
-        >
-          <Field id="f-exit-reason" label="How did it end?">
-            <select
-              id="f-exit-reason"
-              className={inputClass}
-              value={fields.exitReason}
-              onChange={(e) => {
-                const reason = e.target.value as ExitReason;
-                setSaved(null);
-                setFields((prev) => ({
-                  ...prev,
-                  exitReason: reason,
-                  /* A hit target or a hit stop has a price you already typed.
-                     Offer it rather than asking for it twice. */
-                  exit:
-                    reason === "open"
-                      ? ""
-                      : reason === "target" && prev.target.trim()
-                        ? prev.target
-                        : reason === "stop" && prev.stop.trim()
-                          ? prev.stop
-                          : prev.exit,
-                }));
-              }}
-            >
-              <option value="open">It is still open</option>
-              <option value="target">It reached my target</option>
-              <option value="stop">It hit my stop</option>
-              <option value="manual">I closed it myself</option>
-            </select>
-          </Field>
-
-          {fields.exitReason !== "open" && (
-            <Field
-              id="f-exit"
-              label="Exit price"
-              hint="What you actually got out at, including any slippage."
-            >
-              <input
-                id="f-exit"
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min="0"
-                aria-describedby={describe("f-exit", true, false)}
-                className={`${inputClass} tabular`}
-                value={fields.exit}
-                onChange={(e) => update("exit", e.target.value)}
-              />
-            </Field>
-          )}
-        </Group>
-
-        <Group
-          legend="Honesty check"
-          blurb="Nobody sees these answers. They are also the ones that predict an emptied account better than any chart does."
-        >
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface px-3 py-3 text-sm has-[:checked]:border-warn has-[:checked]:bg-warn-soft">
-            <input
-              type="checkbox"
-              checked={fields.stopMovedAgainst}
-              onChange={(e) => update("stopMovedAgainst", e.target.checked)}
-              className="mt-0.5"
-              style={{ accentColor: "var(--accent)" }}
-            />
-            <span>
-              <span className="font-medium">
-                I moved my stop further away after the trade went against me.
-              </span>
-              <span className="block text-xs text-muted">
-                Moving a stop toward profit is fine. Moving it away turns a planned
-                small loss into an unplanned large one.
-              </span>
-            </span>
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="f-count" label="Trades taken today" hint="Counting this one.">
-              <input
-                id="f-count"
-                type="number"
-                inputMode="numeric"
-                step="1"
-                min="1"
-                aria-describedby={describe("f-count", true, false)}
-                className={`${inputClass} tabular`}
-                value={fields.tradesToday}
-                onChange={(e) => update("tradesToday", e.target.value)}
-              />
-            </Field>
-            <Field
-              id="f-minutes"
-              label="Minutes since your last losing trade"
-              hint="Leave this blank if you had not lost yet today."
-            >
-              <input
-                id="f-minutes"
-                type="number"
-                inputMode="numeric"
-                step="1"
-                min="0"
-                aria-describedby={describe("f-minutes", true, false)}
-                className={`${inputClass} tabular`}
-                value={fields.minutesSincePriorLoss}
-                onChange={(e) => update("minutesSincePriorLoss", e.target.value)}
-              />
-            </Field>
-          </div>
-        </Group>
-
-        <div className="flex flex-wrap items-center gap-4">
+        <GradeReport grade={graded} title="How you traded" />
+        <div className="flex flex-wrap gap-3">
           <button
-            type="submit"
-            className="rounded-xl bg-accent px-5 py-3 font-medium text-bg transition-opacity hover:opacity-90"
+            type="button"
+            onClick={again}
+            className="rounded-xl bg-accent px-5 py-3 font-medium text-bg"
           >
-            Log this trade
+            Grade another trade
           </button>
           <Link
             href="/journal/history/"
-            className="text-sm text-muted underline underline-offset-4 hover:text-fg"
+            className="rounded-xl border border-border px-5 py-3 font-medium transition-colors hover:border-accent hover:text-accent"
           >
-            See your journal
+            See all your trades
           </Link>
         </div>
+      </div>
+    );
+  }
 
-        {tried && !canSave && (
-          <p role="alert" className="text-sm text-warn">
-            {entryProblem ?? sizeProblem} Without a price and a size there is
-            nothing here to measure.
+  /* ------------------------------- the form ------------------------------- */
+
+  return (
+    <div className="grid gap-8 lg:grid-cols-[1fr_22rem] lg:items-start">
+      <div>
+        {/* 1. the screenshot */}
+        <section className="card p-5">
+          <h2 className="font-display text-lg font-semibold">
+            1. Drop in your chart screenshot
+          </h2>
+          <p className="mt-1 text-sm text-muted">
+            The prices printed on it get read automatically, so you can tap them
+            into the questions below instead of typing. It also means that in a
+            month you can still see what the trade actually looked like.
           </p>
-        )}
-      </form>
+          <div className="mt-4">
+            <ScreenshotInput
+              value={shot}
+              onChange={(id) => {
+                setShot(id);
+                setPrices([]);
+                setReadFailed(false);
+                if (!id) {
+                  setReading(null);
+                  return;
+                }
+                setReading(0);
+                getShot(id)
+                  .then((stored) => {
+                    if (!stored) throw new Error("no image");
+                    return readChart(stored.blob, (f) => setReading(f));
+                  })
+                  .then(({ prices: found }) => {
+                    setPrices(found);
+                    setReading(null);
+                    setReadFailed(found.length === 0);
+                  })
+                  .catch(() => {
+                    setReading(null);
+                    setReadFailed(true);
+                  });
+              }}
+            />
 
-      <aside className="lg:sticky lg:top-20 lg:self-start">
-        <div ref={panelRef} className="card scroll-mt-20 p-5">
-          {saved ? (
-            <div className="space-y-4">
-              <p
-                role="status"
-                className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-2 text-sm text-accent"
-              >
-                Logged{saved.trade.symbol ? ` — ${saved.trade.symbol}` : ""} on{" "}
-                {saved.trade.date}.
+            {reading !== null && (
+              <div className="mt-3" role="status">
+                <p className="text-sm text-muted">
+                  Reading the numbers off your chart… {Math.round(reading * 100)}%
+                </p>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                  <div
+                    className="h-full bg-accent transition-all"
+                    style={{ width: `${Math.round(reading * 100)}%` }}
+                  />
+                </div>
+                <p className="mt-1.5 text-xs text-muted">
+                  First time takes a few seconds while the reader downloads. It
+                  runs on your computer, not on a server.
+                </p>
+              </div>
+            )}
+
+            {prices.length > 0 && (
+              <div className="mt-3 rounded-xl border border-accent/40 bg-accent-soft/40 p-3">
+                <p className="text-sm font-medium text-accent">
+                  Found {prices.length} price{prices.length === 1 ? "" : "s"} on your
+                  chart.
+                </p>
+                <p className="mt-1 text-xs text-muted">
+                  Tap them into the questions below instead of typing. Check each
+                  one — this reads the text on the picture, it does not know which
+                  number was your entry.
+                </p>
+              </div>
+            )}
+
+            {readFailed && (
+              <p className="mt-3 text-sm text-muted">
+                No prices could be read off that image — the text may be small or
+                low contrast. Type the numbers in below instead; everything still
+                works.
               </p>
-              <GradeReport grade={saved.grade} title="Process grade" />
-              <div className="flex flex-wrap gap-3 border-t border-border pt-4">
-                <Link
-                  href="/journal/history/"
-                  className="rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors hover:border-accent hover:text-accent"
-                >
-                  Open your journal
-                </Link>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-muted">
+            The picture never leaves your computer — the reading happens on your
+            own device, because there is no server behind this page. It reads the
+            text printed on the image; it cannot see the chart itself or judge
+            the trade, so you confirm which number was which.
+          </p>
+        </section>
+
+        {/* 2. the numbers */}
+        <section className="card mt-5 p-5">
+          <h2 className="font-display text-lg font-semibold">2. The numbers</h2>
+          <p className="mt-1 text-sm text-muted">
+            Six things. Read them off your chart or your broker.
+          </p>
+
+          <div className="mt-4">
+            <Ask
+              label="Did you buy or sell?"
+              why="Buying first is a long — you want the price to rise. Selling first is a short."
+            >
+              <Choice
+                value={direction}
+                onChange={(v) => setDirection(v as "long" | "short")}
+                options={[
+                  { id: "long", label: "Bought" },
+                  { id: "short", label: "Sold" },
+                ]}
+              />
+            </Ask>
+
+            <Ask
+              label="Where did you get in?"
+              why="The price you were actually filled at, not the one you hoped for."
+              hint={
+                <PriceChips prices={prices} onPick={(v) => setEntry(String(v))} />
+              }
+            >
+              <Price value={entry} onChange={setEntry} />
+            </Ask>
+
+            <Ask
+              label="Where was your stop?"
+              why="The price where you would have admitted the idea was wrong and got out."
+              hint={
+                noStop ? (
+                  <span className="text-warn">
+                    Without a stop this trade had no defined risk — the loss was
+                    whatever the market decided. You can still log it.
+                  </span>
+                ) : (
+                  <div className="space-y-2">
+                    {Number.isFinite(perUnit) && (
+                      <span className="block text-muted">
+                        That is {money(perUnit)} a share at risk.
+                      </span>
+                    )}
+                    <PriceChips
+                      prices={roles.stops}
+                      onPick={(v) => setStop(String(v))}
+                    />
+                  </div>
+                )
+              }
+            >
+              <Price value={stop} onChange={setStop} disabled={noStop} />
+              <button
+                type="button"
+                onClick={() => setNoStop((v) => !v)}
+                className={`mt-2 w-full rounded-lg border px-3 py-2 text-xs transition-colors ${
+                  noStop ? "border-warn text-warn" : "border-border text-muted hover:text-fg"
+                }`}
+              >
+                {noStop ? "I did have a stop" : "I did not have a stop"}
+              </button>
+            </Ask>
+
+            <Ask
+              label="How many shares?"
+              why="The size of the position. This is what turns a price gap into an amount of money."
+              hint={
+                Number.isFinite(suggested) ? (
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-muted">
+                      Your {rules.maxRiskPct}% limit allows{" "}
+                      <strong className="tabular text-fg">
+                        {Math.floor(suggested).toLocaleString()}
+                      </strong>
+                      .
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSize(String(Math.floor(suggested)))}
+                      className="rounded-lg border border-border px-2 py-1 text-xs transition-colors hover:border-accent hover:text-accent"
+                    >
+                      Use that
+                    </button>
+                  </span>
+                ) : null
+              }
+            >
+              <Price value={size} onChange={setSize} placeholder="0" />
+            </Ask>
+
+            <Ask
+              label="Where were you aiming to get out?"
+              why="Your target. Knowing it beforehand is how you tell whether the trade was worth the risk at all."
+              hint={
+                noTarget ? (
+                  <span className="text-warn">
+                    With no target you had no way to know if the reward justified
+                    the risk before you took it.
+                  </span>
+                ) : (
+                  <div className="space-y-2">
+                    {Number.isFinite(rr) && (
+                      <span
+                        className={`block ${rr >= rules.minRR ? "text-buy" : "text-warn"}`}
+                      >
+                        That is {rr.toFixed(2)} to 1 against your stop
+                        {rr < rules.minRR
+                          ? `, below the ${rules.minRR} to 1 you set.`
+                          : "."}
+                      </span>
+                    )}
+                    <PriceChips
+                      prices={roles.targets}
+                      onPick={(v) => setTarget(String(v))}
+                    />
+                  </div>
+                )
+              }
+            >
+              <Price value={target} onChange={setTarget} disabled={noTarget} />
+              <button
+                type="button"
+                onClick={() => setNoTarget((v) => !v)}
+                className={`mt-2 w-full rounded-lg border px-3 py-2 text-xs transition-colors ${
+                  noTarget ? "border-warn text-warn" : "border-border text-muted hover:text-fg"
+                }`}
+              >
+                {noTarget ? "I did have a target" : "I had no target"}
+              </button>
+            </Ask>
+
+            <Ask
+              label="Where did you get out?"
+              why="Leave this if you are still holding — everything you have already decided can still be graded."
+              hint={
+                stillIn ? null : (
+                  <PriceChips prices={prices} onPick={(v) => setExit(String(v))} />
+                )
+              }
+            >
+              <Price value={exit} onChange={setExit} disabled={stillIn} />
+              <button
+                type="button"
+                onClick={() => setStillIn((v) => !v)}
+                className={`mt-2 w-full rounded-lg border px-3 py-2 text-xs transition-colors ${
+                  stillIn ? "border-accent text-accent" : "border-border text-muted hover:text-fg"
+                }`}
+              >
+                {stillIn ? "I have closed it" : "I am still in it"}
+              </button>
+            </Ask>
+          </div>
+
+          {/* account, remembered */}
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm">
+            {editingAccount ? (
+              <>
+                <label htmlFor="acct" className="text-muted">
+                  Account size
+                </label>
+                <input
+                  id="acct"
+                  type="number"
+                  value={accountText}
+                  onChange={(e) => setAccountText(e.target.value)}
+                  className="tabular w-32 rounded-lg border border-border bg-surface px-3 py-1.5 font-mono"
+                />
                 <button
                   type="button"
-                  onClick={() => setSaved(null)}
-                  className="rounded-lg px-3 py-2 text-sm text-muted underline underline-offset-4 hover:text-fg"
+                  onClick={() => {
+                    const n = Number(accountText);
+                    if (Number.isFinite(n) && n > 0) {
+                      setAccount(n);
+                      saveAccountSize(n);
+                    }
+                    setEditingAccount(false);
+                  }}
+                  className="rounded-lg border border-accent px-3 py-1.5 text-xs text-accent"
                 >
-                  Log another
+                  Save
                 </button>
-              </div>
-              <p className="text-sm text-muted">
-                Your answers are still in the form, so a second trade takes a few
-                seconds. The screenshot was cleared — attach the chart that belongs
-                to the new trade.
-              </p>
-            </div>
-          ) : draft.entry > 0 ? (
-            <div className="space-y-4">
-              <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
-                Live preview · nothing saved yet
-              </p>
-              <GradeReport grade={grade} title="Live grade" />
-            </div>
-          ) : (
-            <div className="space-y-3 text-sm text-muted">
-              <h2 className="font-display text-base font-semibold text-fg">
-                Your grade appears here
-              </h2>
-              <p>
-                It scores what you controlled: whether you had a stop, whether the
-                size followed from it, whether you knew what you were trading, and
-                whether you wrote down why.
-              </p>
-              <p>
-                Whether the trade made money is shown beside the grade and never
-                inside it. They are two separate results, and treating them as one
-                is how a lucky win teaches the wrong lesson.
-              </p>
-              <p>Start with an entry price and this fills in as you type.</p>
+              </>
+            ) : (
+              <>
+                <span className="text-muted">
+                  Account size: <strong className="tabular text-fg">{money(accountSize)}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccountText(String(accountSize));
+                    setEditingAccount(true);
+                  }}
+                  className="rounded-lg border border-border px-2 py-1 text-xs text-muted transition-colors hover:text-fg"
+                >
+                  Change
+                </button>
+                <span className="text-xs text-muted">Remembered for next time.</span>
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* 3. the honest bit */}
+        <section className="card mt-5 p-5">
+          <h2 className="font-display text-lg font-semibold">3. Three honest questions</h2>
+          <p className="mt-1 text-sm text-muted">
+            Nobody sees these. They predict an emptied account better than any
+            chart does, so they are worth answering truthfully even when the
+            answer is annoying.
+          </p>
+
+          <div className="mt-4">
+            <Ask
+              label="Did you decide the stop before you got in?"
+              why="A stop worked out afterwards is a reaction. Deciding beforehand, while you are calm, is the whole point of having one."
+            >
+              <Choice value={plannedStop} onChange={setPlannedStop} options={YES_NO} />
+            </Ask>
+
+            <Ask
+              label="Did you move your stop further away?"
+              why="Moving it toward profit is fine. Moving it away turns a planned small loss into an unplanned large one, and it is the habit that ends accounts."
+            >
+              <Choice value={movedStop} onChange={setMovedStop} options={YES_NO} />
+            </Ask>
+
+            <Ask
+              label="Did you write down why, before entering?"
+              why="Written afterwards it is a story that fits the result. Written beforehand it is something you can actually review."
+            >
+              <Choice value={wroteReason} onChange={setWroteReason} options={YES_NO} />
+            </Ask>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowMore((v) => !v)}
+            aria-expanded={showMore}
+            className="mt-4 rounded-lg border border-border px-3 py-2 text-sm text-muted transition-colors hover:border-accent hover:text-fg"
+          >
+            {showMore ? "Hide the extra details" : "Add symbol, setup and notes (optional)"}
+          </button>
+
+          {showMore && (
+            <div className="mt-4 grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
+              <label className="block text-sm">
+                <span className="text-muted">Symbol</span>
+                <input
+                  value={symbol}
+                  onChange={(e) => setSymbol(e.target.value)}
+                  placeholder="AAPL"
+                  className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-muted">Setup you were trading</span>
+                <select
+                  value={setup}
+                  onChange={(e) => setSetup(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2"
+                >
+                  <option value="">Not named</option>
+                  {SETUP_NAMES.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                  <option value="Something else">Something else</option>
+                </select>
+              </label>
+              <label className="block text-sm sm:col-span-2">
+                <span className="text-muted">
+                  What you wrote down before entering
+                </span>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={2}
+                  placeholder="Why this, why now, and what would prove you wrong."
+                  className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-muted">Trade number today</span>
+                <input
+                  type="number"
+                  value={tradesToday}
+                  onChange={(e) => setTradesToday(e.target.value)}
+                  className="tabular mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-muted">Minutes since your last loss</span>
+                <input
+                  type="number"
+                  value={minutesSince}
+                  onChange={(e) => setMinutesSince(e.target.value)}
+                  placeholder="blank if none"
+                  className="tabular mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono"
+                />
+              </label>
             </div>
           )}
+        </section>
+
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={save}
+            disabled={!ready}
+            className="rounded-xl bg-accent px-6 py-3 font-medium text-bg transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Save this trade
+          </button>
+          {!ready && (
+            <span className="text-sm text-muted">
+              Add where you got in and how many shares, and the grade appears.
+            </span>
+          )}
         </div>
+      </div>
+
+      {/* live grade, alongside */}
+      <aside className="lg:sticky lg:top-24">
+        {ready ? (
+          <>
+            <GradeReport grade={graded} title="Your grade so far" />
+            {Number.isFinite(riskPct) && (
+              <p
+                className={`mt-3 text-sm ${
+                  riskPct > rules.maxRiskPct ? "text-warn" : "text-muted"
+                }`}
+              >
+                This trade put <strong className="tabular">{money(perUnit * draft.size)}</strong> at
+                risk, which is {riskPct.toFixed(2)}% of your account.{" "}
+                {riskPct > rules.maxRiskPct
+                  ? `That is above the ${rules.maxRiskPct}% limit you set.`
+                  : "That is within the limit you set."}
+              </p>
+            )}
+            <p className="mt-3 text-xs text-muted">
+              Not the grade you expected?{" "}
+              <Link href="/settings/" className="underline underline-offset-4">
+                These thresholds are yours to set.
+              </Link>
+            </p>
+          </>
+        ) : (
+          <div className="card p-5">
+            <h2 className="font-display text-lg font-semibold">Your grade appears here</h2>
+            <p className="mt-2 text-sm text-muted">
+              It scores the decisions you made, not whether the trade made money —
+              those are two separate results, and treating them as one is how a
+              lucky win teaches the wrong lesson.
+            </p>
+            <p className="mt-2 text-sm text-muted">
+              Start with where you got in and how many shares.
+            </p>
+          </div>
+        )}
       </aside>
     </div>
   );

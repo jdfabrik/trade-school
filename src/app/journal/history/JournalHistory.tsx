@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import GradeReport, { money, rValue } from "@/components/GradeReport";
 import { Callout, GradePill, Stat } from "@/components/ui";
-import { journalStore } from "@/lib/clientStore";
+import { MIN_TRADES_FOR_STATS } from "@/lib/rules";
+import { journalStore, rulesStore } from "@/lib/clientStore";
 import {
   averageScore,
   gradeTrade,
@@ -12,7 +13,7 @@ import {
   weakestHabits,
   type Grade,
 } from "@/lib/grade";
-import { deleteTrade, toCsv } from "@/lib/journal";
+import { deleteTrade, toCsv, fromCsv, mergeTrades, updateTrade } from "@/lib/journal";
 import { deleteShot, shotUrl } from "@/lib/screenshots";
 import {
   cumulativeR,
@@ -188,6 +189,107 @@ function Shot({
 
 /* ------------------------------- one trade ---------------------------------- */
 
+/**
+ * Correcting a logged trade.
+ *
+ * Previously the only way to fix a mistyped price was to delete the trade and
+ * enter it again, which on a journal meant to be filled in daily is enough
+ * friction to stop someone bothering.
+ */
+function NumberEditor({
+  trade,
+  onSave,
+  onCancel,
+}: {
+  trade: Trade;
+  onSave: (next: Trade) => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState({
+    symbol: trade.symbol,
+    entry: String(trade.entry),
+    stop: trade.stop === null ? "" : String(trade.stop),
+    target: trade.target === null ? "" : String(trade.target),
+    exit: trade.exit === null ? "" : String(trade.exit),
+    size: String(trade.size),
+    accountSize: String(trade.accountSize),
+  });
+
+  const num = (v: string) => {
+    const n = Number(v);
+    return v.trim() === "" || !Number.isFinite(n) ? null : n;
+  };
+
+  const entry = num(form.entry);
+  const size = num(form.size);
+  const account = num(form.accountSize);
+  const valid = entry !== null && entry > 0 && size !== null && size > 0 && account !== null;
+
+  const field = (key: keyof typeof form, label: string, placeholder = "") => (
+    <label className="block text-sm">
+      <span className="text-muted">{label}</span>
+      <input
+        type={key === "symbol" ? "text" : "number"}
+        inputMode={key === "symbol" ? undefined : "decimal"}
+        step="0.01"
+        value={form[key]}
+        placeholder={placeholder}
+        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+        className="tabular mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-sm"
+      />
+    </label>
+  );
+
+  return (
+    <div className="mb-4 rounded-xl border border-accent/40 bg-accent-soft/30 p-4">
+      <h4 className="font-display text-sm font-semibold">Fix the numbers</h4>
+      <p className="mt-1 text-xs text-muted">
+        Leave a price blank if there was not one. The grade is worked out again
+        when you save.
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        {field("symbol", "Symbol")}
+        {field("entry", "Got in at")}
+        {field("size", "Shares")}
+        {field("stop", "Stop", "none")}
+        {field("target", "Target", "none")}
+        {field("exit", "Got out at", "still in")}
+        {field("accountSize", "Account size")}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={!valid}
+          onClick={() => {
+            const exit = num(form.exit);
+            onSave({
+              ...trade,
+              symbol: form.symbol.trim() || trade.symbol,
+              entry: entry as number,
+              stop: num(form.stop),
+              target: num(form.target),
+              exit,
+              size: size as number,
+              accountSize: account as number,
+              exitReason: exit === null ? "open" : trade.exitReason === "open" ? "manual" : trade.exitReason,
+            });
+          }}
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg disabled:opacity-40"
+        >
+          Save the corrections
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg border border-border px-3 py-2 text-sm text-muted transition-colors hover:text-fg"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function TradeItem({
   trade,
   grade,
@@ -197,6 +299,7 @@ function TradeItem({
   onAskDelete,
   onCancelDelete,
   onDelete,
+  onSave,
 }: {
   trade: Trade;
   grade: Grade;
@@ -206,7 +309,9 @@ function TradeItem({
   onAskDelete: () => void;
   onCancelDelete: () => void;
   onDelete: () => void;
+  onSave: (next: Trade) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const panelId = `trade-${trade.id}`;
   const r = realisedR(trade);
   const pnl = profitLoss(trade);
@@ -283,6 +388,17 @@ function TradeItem({
           <GradeReport grade={grade} />
 
           <div className="border-t border-border pt-3">
+            {editing && (
+              <NumberEditor
+                trade={trade}
+                onCancel={() => setEditing(false)}
+                onSave={(next) => {
+                  onSave(next);
+                  setEditing(false);
+                }}
+              />
+            )}
+
             {confirming ? (
               <div className="flex flex-wrap items-center gap-3">
                 <p className="text-sm text-warn">
@@ -304,13 +420,22 @@ function TradeItem({
                 </button>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={onAskDelete}
-                className="rounded-lg text-sm text-muted underline underline-offset-4 hover:text-fg"
-              >
-                Delete this trade
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditing((v) => !v)}
+                  className="rounded-lg border border-border px-3 py-1.5 text-sm transition-colors hover:border-accent hover:text-accent"
+                >
+                  {editing ? "Stop editing" : "Fix the numbers"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onAskDelete}
+                  className="rounded-lg text-sm text-muted underline underline-offset-4 hover:text-fg"
+                >
+                  Delete this trade
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -322,6 +447,15 @@ function TradeItem({
 /* --------------------------------- the page --------------------------------- */
 
 export default function JournalHistory() {
+  const rules = useSyncExternalStore(
+    rulesStore.subscribe,
+    rulesStore.snapshot,
+    rulesStore.serverSnapshot,
+  );
+  const [importMsg, setImportMsg] = useState<
+    { ok: boolean; text: string } | null
+  >(null);
+
   const trades = useSyncExternalStore(
     journalStore.subscribe,
     journalStore.snapshot,
@@ -331,7 +465,7 @@ export default function JournalHistory() {
   const [confirming, setConfirming] = useState<string | null>(null);
 
   const view = useMemo(() => {
-    const grades = trades.map((t) => gradeTrade(t));
+    const grades = trades.map((t) => gradeTrade(t, rules));
     /* The store keeps trades newest first, which is how the list reads; the
        curve needs them the other way round. */
     const chrono = [...trades].reverse();
@@ -352,9 +486,43 @@ export default function JournalHistory() {
       edge: expectancy(rs),
       drawdown: maxDrawdownR(rs),
     };
-  }, [trades]);
+  }, [trades, rules]);
 
   const habits = useMemo(() => weakestHabits(view.grades, 4), [view.grades]);
+
+  // Below this many closed trades a win rate or an expectancy is mostly luck,
+  // and printing one in large type on a site about not reading noise as signal
+  // would be teaching the opposite of the lesson.
+  const enoughToMeasure = view.measured.length >= MIN_TRADES_FOR_STATS;
+
+  function importCsv(file: File) {
+    file
+      .text()
+      .then((text) => {
+        const { trades: incoming, errors } = fromCsv(text);
+        if (incoming.length === 0) {
+          setImportMsg({
+            ok: false,
+            text: errors[0] ?? "Nothing in that file could be read.",
+          });
+          return;
+        }
+        const { trades: next, added, replaced } = mergeTrades(incoming);
+        journalStore.refresh(next);
+        const parts = [
+          added > 0 ? `${added} trade${added === 1 ? "" : "s"} added` : null,
+          replaced > 0 ? `${replaced} updated` : null,
+          errors.length > 0
+            ? `${errors.length} row${errors.length === 1 ? "" : "s"} skipped`
+            : null,
+        ].filter(Boolean);
+        setImportMsg({
+          ok: true,
+          text: `${parts.join(", ")}. Screenshots are not in a CSV, so imported trades have no picture.`,
+        });
+      })
+      .catch(() => setImportMsg({ ok: false, text: "That file could not be read." }));
+  }
 
   function exportCsv() {
     const blob = new Blob([toCsv(trades)], { type: "text/csv;charset=utf-8" });
@@ -415,16 +583,34 @@ export default function JournalHistory() {
           />
           <Stat
             label="Win rate"
-            value={Number.isFinite(view.wins) ? `${view.wins.toFixed(0)}%` : "—"}
+            value={
+              enoughToMeasure
+                ? Number.isFinite(view.wins)
+                  ? `${view.wins.toFixed(0)}%`
+                  : "—"
+                : "—"
+            }
           />
           <Stat
             label="Average result"
-            value={rValue(view.edge)}
-            tone={view.edge > 0 ? "buy" : view.edge < 0 ? "sell" : "plain"}
+            value={enoughToMeasure ? rValue(view.edge) : "—"}
+            tone={
+              enoughToMeasure
+                ? view.edge > 0
+                  ? "buy"
+                  : view.edge < 0
+                    ? "sell"
+                    : "plain"
+                : "plain"
+            }
           />
           <Stat
             label="Worst drawdown"
-            value={view.measured.length > 0 ? `${view.drawdown.toFixed(2)}R` : "—"}
+            value={
+              enoughToMeasure && view.measured.length > 0
+                ? `${view.drawdown.toFixed(2)}R`
+                : "—"
+            }
           />
           <Stat
             label="Profit and loss"
@@ -432,11 +618,24 @@ export default function JournalHistory() {
             tone={view.totalPnl > 0 ? "buy" : view.totalPnl < 0 ? "sell" : "plain"}
           />
         </div>
-        <p className="mt-3 text-sm text-muted">
-          The average grade is the one to watch. Profit and loss is here because you
-          will look for it anyway, not because it measures how well you are trading
-          yet — over this few trades it mostly measures luck.
-        </p>
+        {enoughToMeasure ? (
+          <p className="mt-3 text-sm text-muted">
+            The average grade is still the one to watch. Profit and loss is here
+            because you will look for it anyway, not because it is the better
+            measure of how you are trading.
+          </p>
+        ) : (
+          <p className="mt-3 text-sm text-muted">
+            Win rate, average result and drawdown stay hidden until you have{" "}
+            <strong className="tabular text-fg">{MIN_TRADES_FOR_STATS}</strong>{" "}
+            closed trades with a stop — you have{" "}
+            <strong className="tabular text-fg">{view.measured.length}</strong>.
+            Below that they measure luck rather than skill, and a site about not
+            mistaking noise for signal should not print one in large type. Your
+            average grade is useful from the very first trade, because it
+            measures what you did rather than what the market did.
+          </p>
+        )}
       </section>
 
       <section aria-labelledby="curve">
@@ -508,7 +707,33 @@ export default function JournalHistory() {
           >
             Export as CSV
           </button>
+          <label className="cursor-pointer rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:border-accent hover:text-accent">
+            Import a CSV
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) importCsv(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
         </div>
+
+        {importMsg && (
+          <div
+            role="status"
+            className={`mb-3 rounded-xl border px-4 py-3 text-sm ${
+              importMsg.ok
+                ? "border-accent/40 bg-accent-soft text-accent"
+                : "border-sell/40 bg-sell/10 text-sell"
+            }`}
+          >
+            {importMsg.text}
+          </div>
+        )}
         <ul className="space-y-2">
           {trades.map((trade, i) => (
             <TradeItem
@@ -524,6 +749,7 @@ export default function JournalHistory() {
               onAskDelete={() => setConfirming(trade.id)}
               onCancelDelete={() => setConfirming(null)}
               onDelete={() => remove(trade)}
+              onSave={(next) => journalStore.refresh(updateTrade(next))}
             />
           ))}
         </ul>

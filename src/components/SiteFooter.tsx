@@ -30,6 +30,7 @@ export default function SiteFooter() {
               <li><Link href="/tools/" className="hover:text-fg">Calculators</Link></li>
               <li><Link href="/glossary/" className="hover:text-fg">Glossary</Link></li>
               <li><Link href="/reality/" className="hover:text-fg">The odds</Link></li>
+              <li><Link href="/settings/" className="hover:text-fg">Your rules</Link></li>
             </ul>
           </div>
           <div>

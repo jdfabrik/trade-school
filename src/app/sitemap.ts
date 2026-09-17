@@ -20,6 +20,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/drills/chart/",
     "/tools/",
     "/glossary/",
+    "/settings/",
     "/reality/",
   ];
 

@@ -160,10 +160,9 @@ export default function ScreenshotInput({
       )}
 
       <p id={noteId} className="mt-2 text-sm text-muted">
-        The image stays in this browser and is never uploaded. There is no server
-        behind this site to upload it to. That also means this site cannot read
-        your chart: you supply the numbers, and it checks the discipline behind
-        them. Clearing your browser data deletes it.
+        The image stays in this browser and is never uploaded — there is no server
+        behind this site to upload it to, so the reading happens on your own
+        device. Clearing your browser data deletes it.
       </p>
     </div>
   );

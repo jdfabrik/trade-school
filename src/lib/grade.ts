@@ -7,9 +7,10 @@
  * on profit learns to gamble, because gambling works often enough to feel like
  * skill. A trader who grades themselves on process learns to trade.
  *
- * Nothing here reads your screenshot. A browser cannot look at a chart image and
- * tell whether the setup was real — so the site does not pretend to. You supply
- * the numbers; this checks the discipline behind them.
+ * Nothing here looks at your screenshot. The form can read the PRICES printed on
+ * an image, but nothing understands the chart — whether the setup was real, or
+ * where you actually entered. The trader confirms every number; this grades the
+ * discipline behind them.
  */
 import {
   riskPerUnit,
@@ -19,6 +20,7 @@ import {
   positionSize,
   type Trade,
 } from "./trade";
+import { DEFAULT_RULES, type TradingRules } from "./rules";
 
 export type Letter = "A" | "B" | "C" | "D" | "F";
 
@@ -48,11 +50,17 @@ export interface Grade {
   headline: string;
 }
 
-/** The maximum risk this site will call acceptable on a single trade. */
-export const MAX_RISK_PCT = 1;
+/**
+ * The defaults the lessons argue for. A trader can change them on /settings/;
+ * these are what applies when they have not.
+ */
+export const MAX_RISK_PCT = DEFAULT_RULES.maxRiskPct;
+export const MIN_RR = DEFAULT_RULES.minRR;
 
-/** The minimum planned reward:risk this site will call acceptable. */
-export const MIN_RR = 2;
+/** Formats a threshold without a trailing ".0" on whole numbers. */
+function threshold(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(n);
+}
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
@@ -69,7 +77,11 @@ export function letterFor(score: number): Letter {
   return "F";
 }
 
-export function gradeTrade(trade: Trade): Grade {
+export function gradeTrade(
+  trade: Trade,
+  rules: TradingRules = DEFAULT_RULES,
+): Grade {
+  const { maxRiskPct, minRR } = rules;
   const checks: Check[] = [];
 
   const perUnit = riskPerUnit(trade);
@@ -96,24 +108,28 @@ export function gradeTrade(trade: Trade): Grade {
   let riskScore = 0;
   let riskDetail = "No stop, so the risk on this trade was undefined.";
   if (hasStop && Number.isFinite(riskPct)) {
-    // full marks at or under 1%, straight line to zero by 4%
-    riskScore = riskPct <= MAX_RISK_PCT ? 1 : clamp01((4 - riskPct) / 3);
+    // full marks at or under the trader's limit, then a straight line to zero
+    // by four times it, so overshooting is penalised in proportion
+    const zeroAt = maxRiskPct * 4;
+    riskScore =
+      riskPct <= maxRiskPct
+        ? 1
+        : clamp01((zeroAt - riskPct) / (zeroAt - maxRiskPct));
     riskDetail = `Risked ${money(perUnit * trade.size)}, which is ${riskPct.toFixed(2)}% of a ${money(trade.accountSize)} account.`;
   }
   checks.push({
     id: "risk-size",
-    label: `Risk kept to ${MAX_RISK_PCT}% of the account`,
+    label: `Risk kept to ${threshold(maxRiskPct)}% of the account`,
     weight: 3,
     score: riskScore,
-    passed: hasStop && riskPct <= MAX_RISK_PCT + 1e-9,
+    passed: hasStop && riskPct <= maxRiskPct + 1e-9,
     detail: riskDetail,
-    advice:
-      "Cap the loss on any one trade at 1% of your account. At that size a run of ten losses costs you about a tenth of the account — survivable. At 5% the same run is close to fatal.",
+    advice: `Cap the loss on any one trade at ${threshold(maxRiskPct)}% of your account — the limit you set. At 1% a run of ten losses costs about a tenth of the account, which is survivable. At 5% the same run is close to fatal.`,
   });
 
   /* 3. The size must actually follow from the stop. */
   const intended = hasStop
-    ? positionSize(trade.accountSize, MAX_RISK_PCT, trade.entry, trade.stop as number)
+    ? positionSize(trade.accountSize, maxRiskPct, trade.entry, trade.stop as number)
     : NaN;
   const sizeRatio = Number.isFinite(intended) ? trade.size / intended : NaN;
   const sizeOk = Number.isFinite(sizeRatio) && sizeRatio <= 1.25;
@@ -133,19 +149,18 @@ export function gradeTrade(trade: Trade): Grade {
   /* 4. A target worth the risk. */
   let rrScore = 0;
   if (Number.isFinite(rr)) {
-    rrScore = rr >= MIN_RR ? 1 : clamp01(rr / MIN_RR);
+    rrScore = rr >= minRR ? 1 : clamp01(rr / minRR);
   }
   checks.push({
     id: "reward-risk",
-    label: `Planned reward at least ${MIN_RR}:1`,
+    label: `Planned reward at least ${threshold(minRR)}:1`,
     weight: 2,
     score: rrScore,
-    passed: Number.isFinite(rr) && rr >= MIN_RR - 1e-9,
+    passed: Number.isFinite(rr) && rr >= minRR - 1e-9,
     detail: Number.isFinite(rr)
       ? `Target was ${rr.toFixed(2)}:1 against the stop.`
       : "No target recorded, so the trade had no planned reward.",
-    advice:
-      "Know what you stand to make before you risk anything. At 2:1 you only need to be right a third of the time to break even; at 1:1 you need half, which is a much harder living.",
+    advice: `Know what you stand to make before you risk anything. At your ${threshold(minRR)}:1 threshold you need to be right about ${Math.round((1 / (1 + minRR)) * 100)}% of the time to break even. The lower the reward, the more often you have to be right.`,
   });
 
   /* 5. A named setup — you knew what you were trading. */

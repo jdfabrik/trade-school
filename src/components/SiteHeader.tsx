@@ -11,6 +11,7 @@ const NAV = [
   { href: "/drills/", label: "Drills", match: "/drills" },
   { href: "/tools/", label: "Calculators", match: "/tools" },
   { href: "/glossary/", label: "Glossary", match: "/glossary" },
+  { href: "/settings/", label: "Your rules", match: "/settings" },
 ];
 
 function ThemeToggle() {
