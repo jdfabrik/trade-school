@@ -103,9 +103,8 @@ export default function ScreenshotReader({
           Have it read the trade for you
         </h3>
         <p className="mt-1 text-sm text-muted">
-          The built-in reader only manages large, high-contrast text, and on a
-          normal dark-theme chart it finds nothing. An AI model can actually read
-          the picture — but doing that means{" "}
+          An AI model can read the prices, ticker and direction off your chart,
+          so you tap them in rather than typing. Doing that means{" "}
           <strong className="text-fg">sending your screenshot</strong> to the
           provider you choose, using your own account. It is per-image and never
           automatic.

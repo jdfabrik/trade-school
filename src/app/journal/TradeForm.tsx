@@ -12,7 +12,6 @@ import { journalStore, rulesStore } from "@/lib/clientStore";
 import { loadAccountSize, saveAccountSize } from "@/lib/rules";
 import { affordableSize, riskPercent, riskPerUnit, plannedRR } from "@/lib/trade";
 import { SETUP_NAMES } from "@/content/setups";
-import { readChart, rolesFor, READER_DOWNLOAD_MB } from "@/lib/ocr";
 import { getShot } from "@/lib/screenshots";
 import ScreenshotReader from "@/components/ScreenshotReader";
 import type { ExtractedField } from "@/lib/extraction";
@@ -109,35 +108,6 @@ function Choice({
   );
 }
 
-/** Prices found on the screenshot, offered as one-tap answers. */
-function PriceChips({
-  prices,
-  onPick,
-  empty,
-}: {
-  prices: number[];
-  onPick: (value: number) => void;
-  empty?: string;
-}) {
-  if (prices.length === 0) {
-    return empty ? <span className="text-xs text-muted">{empty}</span> : null;
-  }
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {prices.slice(0, 10).map((p) => (
-        <button
-          key={p}
-          type="button"
-          onClick={() => onPick(p)}
-          className="tabular rounded-lg border border-accent/40 bg-accent-soft px-2.5 py-1 font-mono text-xs text-accent transition-colors hover:border-accent"
-        >
-          {p}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /* --------------------------------- form ---------------------------------- */
 
 const YES_NO = [
@@ -153,10 +123,7 @@ export default function TradeForm() {
   );
 
   const [shot, setShot] = useState<string | null>(null);
-  const [prices, setPrices] = useState<number[]>([]);
   const [shotBlob, setShotBlob] = useState<Blob | null>(null);
-  const [reading, setReading] = useState<number | null>(null);
-  const [readFailed, setReadFailed] = useState(false);
   const [direction, setDirection] = useState<"long" | "short">("long");
   const [entry, setEntry] = useState("");
   const [stop, setStop] = useState("");
@@ -246,9 +213,6 @@ export default function TradeForm() {
 
   const ready = draft.entry > 0 && draft.size > 0;
 
-  // Once the entry is known a stop can only be on one side of it, so the chips
-  // narrow to the prices that could actually be right.
-  const roles = rolesFor(prices, draft.entry > 0 ? draft.entry : null, direction);
 
   function save() {
     if (!ready) return;
@@ -312,75 +276,23 @@ export default function TradeForm() {
           </h2>
           <p className="mt-1 text-sm text-muted">
             Mainly so that in a month you can still see what the trade actually
-            looked like. The site will also try to read the prices off it and
-            offer them as buttons — that works when the text on your chart is
-            large and high-contrast, and often does not on a dark theme with
-            small axis labels. When it cannot read your chart it will say so
-            rather than guess. Typing the numbers always works.
+            looked like — a journal of numbers without pictures is much harder to
+            learn from. If you want the numbers read off it for you, there is an
+            option below that uses your own AI account.
           </p>
           <div className="mt-4">
             <ScreenshotInput
               value={shot}
               onChange={(id) => {
                 setShot(id);
-                setPrices([]);
-                setReadFailed(false);
                 if (!id) {
-                  setReading(null);
                   setShotBlob(null);
                   return;
                 }
-                setReading(0);
-                getShot(id)
-                  .then((stored) => {
-                    if (!stored) throw new Error("no image");
-                    setShotBlob(stored.blob);
-                    return readChart(stored.blob, (f) => setReading(f));
-                  })
-                  .then(({ prices: found }) => {
-                    setPrices(found);
-                    setReading(null);
-                    setReadFailed(found.length === 0);
-                  })
-                  .catch(() => {
-                    setReading(null);
-                    setReadFailed(true);
-                  });
+                // kept so the reader below can send it, if the trader asks it to
+                getShot(id).then((stored) => setShotBlob(stored?.blob ?? null));
               }}
             />
-
-            {reading !== null && (
-              <div className="mt-3" role="status">
-                <p className="text-sm text-muted">
-                  Reading the numbers off your chart… {Math.round(reading * 100)}%
-                </p>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
-                  <div
-                    className="h-full bg-accent transition-all"
-                    style={{ width: `${Math.round(reading * 100)}%` }}
-                  />
-                </div>
-                <p className="mt-1.5 text-xs text-muted">
-                  The first time, this downloads about {READER_DOWNLOAD_MB}MB of
-                  reader from this site — worth knowing if you are on mobile
-                  data. After that your browser keeps it and reading is quick.
-                </p>
-              </div>
-            )}
-
-            {prices.length > 0 && (
-              <div className="mt-3 rounded-xl border border-accent/40 bg-accent-soft/40 p-3">
-                <p className="text-sm font-medium text-accent">
-                  Found {prices.length} price{prices.length === 1 ? "" : "s"} on your
-                  chart.
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  Check every one against your chart before you tap it. This reads
-                  the text printed on the picture — it does not know which number
-                  was your entry, and it can misread a digit.
-                </p>
-              </div>
-            )}
 
             <ScreenshotReader
               blob={shotBlob}
@@ -411,16 +323,6 @@ export default function TradeForm() {
               }}
             />
 
-            {readFailed && (
-              <p className="mt-3 text-sm text-muted">
-                No prices could be read off that image with enough confidence to
-                show you. That usually means the text is small or low-contrast —
-                a dark theme with tiny axis labels is the common case. It is
-                deliberately cautious here: a wrong price offered as a suggestion
-                is worse than none, because you would tap it straight into your
-                journal. Type the numbers in below.
-              </p>
-            )}
           </div>
           <p className="mt-3 text-xs text-muted">
             The picture never leaves your computer — the reading happens on your
@@ -455,9 +357,6 @@ export default function TradeForm() {
             <Ask
               label="Where did you get in?"
               why="The price you were actually filled at, not the one you hoped for."
-              hint={
-                <PriceChips prices={prices} onPick={(v) => setEntry(String(v))} />
-              }
             >
               <Price value={entry} onChange={setEntry} />
             </Ask>
@@ -472,17 +371,11 @@ export default function TradeForm() {
                     whatever the market decided. You can still log it.
                   </span>
                 ) : (
-                  <div className="space-y-2">
-                    {Number.isFinite(perUnit) && (
-                      <span className="block text-muted">
-                        That is {money(perUnit)} a share at risk.
-                      </span>
-                    )}
-                    <PriceChips
-                      prices={roles.stops}
-                      onPick={(v) => setStop(String(v))}
-                    />
-                  </div>
+                  Number.isFinite(perUnit) ? (
+                    <span className="block text-muted">
+                      That is {money(perUnit)} a share at risk.
+                    </span>
+                  ) : null
                 )
               }
             >
@@ -553,22 +446,16 @@ export default function TradeForm() {
                     the risk before you took it.
                   </span>
                 ) : (
-                  <div className="space-y-2">
-                    {Number.isFinite(rr) && (
-                      <span
-                        className={`block ${rr >= rules.minRR ? "text-buy" : "text-warn"}`}
-                      >
-                        That is {rr.toFixed(2)} to 1 against your stop
-                        {rr < rules.minRR
-                          ? `, below the ${rules.minRR} to 1 you set.`
-                          : "."}
-                      </span>
-                    )}
-                    <PriceChips
-                      prices={roles.targets}
-                      onPick={(v) => setTarget(String(v))}
-                    />
-                  </div>
+                  Number.isFinite(rr) ? (
+                    <span
+                      className={`block ${rr >= rules.minRR ? "text-buy" : "text-warn"}`}
+                    >
+                      That is {rr.toFixed(2)} to 1 against your stop
+                      {rr < rules.minRR
+                        ? `, below the ${rules.minRR} to 1 you set.`
+                        : "."}
+                    </span>
+                  ) : null
                 )
               }
             >
@@ -587,11 +474,6 @@ export default function TradeForm() {
             <Ask
               label="Where did you get out?"
               why="Leave this if you are still holding — everything you have already decided can still be graded."
-              hint={
-                stillIn ? null : (
-                  <PriceChips prices={prices} onPick={(v) => setExit(String(v))} />
-                )
-              }
             >
               <Price value={exit} onChange={setExit} disabled={stillIn} />
               <button
