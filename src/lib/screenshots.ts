@@ -40,20 +40,94 @@ function open(): Promise<IDBDatabase> {
   });
 }
 
+/** The parts of a transaction and request this wiring actually touches. */
+interface TransactionLike {
+  oncomplete: null | (() => void);
+  onabort: null | (() => void);
+  onerror: null | (() => void);
+  error?: unknown;
+}
+interface RequestLike<T> {
+  onsuccess: null | (() => void);
+  onerror: null | (() => void);
+  result: T;
+  error?: unknown;
+}
+
+function asError(value: unknown, fallback: string): Error {
+  return value instanceof Error ? value : new Error(fallback);
+}
+
+/**
+ * Settle a promise from an IndexedDB request and its transaction.
+ *
+ * A write must wait for `oncomplete`. `request.onsuccess` fires before the
+ * transaction commits, so resolving there once reported a screenshot as saved
+ * that a failed commit then discarded — leaving a trade pointing at an image
+ * that did not exist. Running out of quota is the ordinary way that happens.
+ *
+ * Reads may settle as soon as the value is in hand, but still reject if the
+ * transaction falls over first.
+ *
+ * Exported for tests: a real IndexedDB will not let you order these events.
+ */
+export function settleTransaction<T>(
+  transaction: TransactionLike,
+  request: RequestLike<T>,
+  { waitForCommit }: { waitForCommit: boolean },
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let value: T;
+    let haveValue = false;
+    let done = false;
+
+    const finish = (fn: () => void) => {
+      if (done) return;
+      done = true;
+      fn();
+    };
+
+    request.onsuccess = () => {
+      value = request.result;
+      haveValue = true;
+      if (!waitForCommit) finish(() => resolve(value));
+    };
+    request.onerror = () =>
+      finish(() => reject(asError(request.error, "That image could not be stored.")));
+
+    transaction.oncomplete = () =>
+      finish(() =>
+        haveValue
+          ? resolve(value)
+          : reject(new Error("The store finished without returning anything.")),
+      );
+    transaction.onabort = () =>
+      finish(() =>
+        reject(
+          asError(
+            transaction.error,
+            "Saving was cancelled by the browser, usually because storage is full.",
+          ),
+        ),
+      );
+    transaction.onerror = () =>
+      finish(() => reject(asError(transaction.error, "That image could not be saved.")));
+  });
+}
+
 function tx<T>(
   mode: IDBTransactionMode,
   run: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> {
-  return open().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const transaction = db.transaction(STORE, mode);
-        const request = run(transaction.objectStore(STORE));
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-        transaction.oncomplete = () => db.close();
-      }),
-  );
+  return open().then((db) => {
+    const transaction = db.transaction(STORE, mode);
+    const request = run(transaction.objectStore(STORE));
+    return settleTransaction(
+      transaction as unknown as TransactionLike,
+      request as unknown as RequestLike<T>,
+      { waitForCommit: mode === "readwrite" },
+    ).finally(() => db.close());
+  });
 }
 
 /** Largest image we will keep, so a stray 40MB PNG cannot fill the quota. */

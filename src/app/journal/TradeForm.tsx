@@ -14,6 +14,8 @@ import { affordableSize, riskPercent, riskPerUnit, plannedRR } from "@/lib/trade
 import { SETUP_NAMES } from "@/content/setups";
 import { readChart, rolesFor, READER_DOWNLOAD_MB } from "@/lib/ocr";
 import { getShot } from "@/lib/screenshots";
+import ScreenshotReader from "@/components/ScreenshotReader";
+import type { ExtractedField } from "@/lib/extraction";
 import type { Trade } from "@/lib/trade";
 
 /* ------------------------------ small pieces ------------------------------ */
@@ -152,6 +154,7 @@ export default function TradeForm() {
 
   const [shot, setShot] = useState<string | null>(null);
   const [prices, setPrices] = useState<number[]>([]);
+  const [shotBlob, setShotBlob] = useState<Blob | null>(null);
   const [reading, setReading] = useState<number | null>(null);
   const [readFailed, setReadFailed] = useState(false);
   const [direction, setDirection] = useState<"long" | "short">("long");
@@ -324,12 +327,14 @@ export default function TradeForm() {
                 setReadFailed(false);
                 if (!id) {
                   setReading(null);
+                  setShotBlob(null);
                   return;
                 }
                 setReading(0);
                 getShot(id)
                   .then((stored) => {
                     if (!stored) throw new Error("no image");
+                    setShotBlob(stored.blob);
                     return readChart(stored.blob, (f) => setReading(f));
                   })
                   .then(({ prices: found }) => {
@@ -376,6 +381,35 @@ export default function TradeForm() {
                 </p>
               </div>
             )}
+
+            <ScreenshotReader
+              blob={shotBlob}
+              onUse={(values: Partial<Record<ExtractedField, string>>) => {
+                // Only the fields the trader ticked, and each still lands in a
+                // normal input they can edit before anything is graded.
+                if (values.entry !== undefined) setEntry(values.entry);
+                if (values.stop !== undefined) {
+                  setStop(values.stop);
+                  setNoStop(false);
+                }
+                if (values.target !== undefined) {
+                  setTarget(values.target);
+                  setNoTarget(false);
+                }
+                if (values.exit !== undefined) {
+                  setExit(values.exit);
+                  setStillIn(false);
+                }
+                if (values.size !== undefined) setSize(values.size);
+                if (values.symbol !== undefined) {
+                  setSymbol(values.symbol);
+                  setShowMore(true);
+                }
+                if (values.direction === "long" || values.direction === "short") {
+                  setDirection(values.direction);
+                }
+              }}
+            />
 
             {readFailed && (
               <p className="mt-3 text-sm text-muted">
