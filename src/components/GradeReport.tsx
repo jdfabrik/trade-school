@@ -70,6 +70,13 @@ export default function GradeReport({
               ? "Every item on the checklist passed."
               : `${grade.failed.length} of ${grade.checks.length} checks need work.`}
           </p>
+          {grade.cappedBy && (
+            <p className="mt-2 rounded-lg border border-warn/40 bg-warn-soft px-3 py-2 text-sm text-warn">
+              Held to a {grade.letter} because {grade.cappedBy}. Some rules are not
+              deductions you can make up elsewhere — the rest of the checklist
+              cannot carry a trade that broke one of them.
+            </p>
+          )}
         </div>
       </div>
 

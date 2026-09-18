@@ -116,12 +116,33 @@ export function rolesFor(
 
 /* ------------------------------ the OCR run ------------------------------- */
 
+export interface ReadWord {
+  text: string;
+  /** 0-100, the recogniser's own confidence in this word. */
+  confidence: number;
+}
+
 export interface ChartRead {
   /** Everything the recogniser thought it saw. Useful when it goes wrong. */
   text: string;
   /** Numbers that look like prices, sorted. */
   prices: number[];
+  /** Every word with its confidence, so a caller can judge the read. */
+  words: ReadWord[];
+  /** Mean confidence across the words that became price candidates. */
+  meanConfidence: number;
 }
+
+/**
+ * Below this, a read is not worth showing to a trader.
+ *
+ * Measured, not guessed: on realistic dark-theme screenshots with small axis
+ * labels the recogniser returns confidently-shaped but WRONG numbers, and the
+ * only signal separating those from good reads is this score. A wrong price
+ * offered as a suggestion is worse than no suggestion, because the trader taps
+ * it into their own journal.
+ */
+export const MIN_WORD_CONFIDENCE = 75;
 
 /**
  * Roughly what the recogniser weighs on first use, in megabytes.
@@ -156,6 +177,24 @@ function assetPaths() {
  * Loaded on demand rather than bundled into every page: most visits never need
  * it, and it is several megabytes.
  */
+/** Pull the per-word confidences out of whatever shape the result takes. */
+function collectWords(data: unknown): ReadWord[] {
+  const out: ReadWord[] = [];
+  const visit = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    const n = node as Record<string, unknown>;
+    if (typeof n.text === "string" && typeof n.confidence === "number" && !Array.isArray(n.words)) {
+      out.push({ text: n.text, confidence: n.confidence });
+    }
+    for (const key of ["blocks", "paragraphs", "lines", "words", "symbols"]) {
+      const child = n[key];
+      if (Array.isArray(child)) for (const c of child) visit(c);
+    }
+  };
+  visit(data);
+  return out;
+}
+
 export async function readChart(
   image: Blob,
   onProgress?: (fraction: number) => void,
@@ -172,7 +211,16 @@ export async function readChart(
   try {
     const { data } = await worker.recognize(image);
     const text = data.text ?? "";
-    return { text, prices: priceCandidates(extractNumbers(text)) };
+    const words: ReadWord[] = collectWords(data);
+    const trusted = words.filter((w) => w.confidence >= MIN_WORD_CONFIDENCE);
+    const numbers = extractNumbers(trusted.map((w) => w.text).join(" "));
+    const prices = priceCandidates(numbers);
+    const used = trusted.filter((w) => /\d/.test(w.text));
+    const meanConfidence =
+      used.length === 0
+        ? 0
+        : used.reduce((n, w) => n + w.confidence, 0) / used.length;
+    return { text, prices, words, meanConfidence };
   } finally {
     await worker.terminate();
   }

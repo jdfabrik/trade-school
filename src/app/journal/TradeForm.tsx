@@ -317,10 +317,12 @@ export default function TradeForm() {
             1. Drop in your chart screenshot
           </h2>
           <p className="mt-1 text-sm text-muted">
-            The prices printed on it get read automatically, so you can tap them
-            into the questions below instead of typing. It also means that in a
-            month you can still see what the trade actually looked like. The
-            first read downloads about {READER_DOWNLOAD_MB}MB, once.
+            Mainly so that in a month you can still see what the trade actually
+            looked like. The site will also try to read the prices off it and
+            offer them as buttons — that works when the text on your chart is
+            large and high-contrast, and often does not on a dark theme with
+            small axis labels. When it cannot read your chart it will say so
+            rather than guess. Typing the numbers always works.
           </p>
           <div className="mt-4">
             <ScreenshotInput
@@ -377,18 +379,21 @@ export default function TradeForm() {
                   chart.
                 </p>
                 <p className="mt-1 text-xs text-muted">
-                  Tap them into the questions below instead of typing. Check each
-                  one — this reads the text on the picture, it does not know which
-                  number was your entry.
+                  Check every one against your chart before you tap it. This reads
+                  the text printed on the picture — it does not know which number
+                  was your entry, and it can misread a digit.
                 </p>
               </div>
             )}
 
             {readFailed && (
               <p className="mt-3 text-sm text-muted">
-                No prices could be read off that image — the text may be small or
-                low contrast. Type the numbers in below instead; everything still
-                works.
+                No prices could be read off that image with enough confidence to
+                show you. That usually means the text is small or low-contrast —
+                a dark theme with tiny axis labels is the common case. It is
+                deliberately cautious here: a wrong price offered as a suggestion
+                is worse than none, because you would tap it straight into your
+                journal. Type the numbers in below.
               </p>
             )}
           </div>

@@ -51,11 +51,45 @@ export interface Trade {
 
 const sign = (d: Direction) => (d === "long" ? 1 : -1);
 
-/** Distance from entry to stop, per share. This is 1R. */
-export function riskPerUnit(trade: Pick<Trade, "entry" | "stop">): number {
+/**
+ * Distance from entry to stop, per share. This is 1R.
+ *
+ * Direction matters and is not optional. A "stop" above the entry on a long is
+ * not a stop — it is an instruction to sell at a loss the moment the trade goes
+ * your way. Taking Math.abs() here once made the grader award full marks to
+ * exactly that trade, which is the worst thing this site could do.
+ *
+ * Callers that genuinely do not know the direction may omit it, and then only
+ * the distance is checked.
+ */
+export function riskPerUnit(
+  trade: Pick<Trade, "entry" | "stop"> & { direction?: Direction },
+): number {
   if (trade.stop === null || !Number.isFinite(trade.stop)) return NaN;
+  if (trade.direction === "long" && trade.stop >= trade.entry) return NaN;
+  if (trade.direction === "short" && trade.stop <= trade.entry) return NaN;
   const distance = Math.abs(trade.entry - trade.stop);
   return distance === 0 ? NaN : distance;
+}
+
+/** True when the stop sits on the side of entry that makes it a stop. */
+export function stopIsOnTheRightSide(
+  trade: Pick<Trade, "entry" | "stop" | "direction">,
+): boolean {
+  if (trade.stop === null || !Number.isFinite(trade.stop)) return false;
+  return trade.direction === "long"
+    ? trade.stop < trade.entry
+    : trade.stop > trade.entry;
+}
+
+/** True when the target sits on the side of entry you actually profit from. */
+export function targetIsOnTheRightSide(
+  trade: Pick<Trade, "entry" | "target" | "direction">,
+): boolean {
+  if (trade.target === null || !Number.isFinite(trade.target)) return false;
+  return trade.direction === "long"
+    ? trade.target > trade.entry
+    : trade.target < trade.entry;
 }
 
 /** The whole dollar amount at stake if the stop is hit. */
@@ -71,11 +105,19 @@ export function riskPercent(
   return (riskAmount(trade) / trade.accountSize) * 100;
 }
 
-/** How many times your risk you stood to make, if the target was hit. */
+/**
+ * How many times your risk you stood to make, if the target was hit.
+ *
+ * Direction matters here for the same reason it does for the stop: a long whose
+ * target sits below its entry has no reward at all, and Math.abs() once turned
+ * that into a flattering 3:1.
+ */
 export function plannedRR(
-  trade: Pick<Trade, "entry" | "stop" | "target">,
+  trade: Pick<Trade, "entry" | "stop" | "target"> & { direction?: Direction },
 ): number {
   if (trade.target === null || !Number.isFinite(trade.target)) return NaN;
+  if (trade.direction === "long" && trade.target <= trade.entry) return NaN;
+  if (trade.direction === "short" && trade.target >= trade.entry) return NaN;
   const risk = riskPerUnit(trade);
   if (!Number.isFinite(risk)) return NaN;
   return Math.abs(trade.target - trade.entry) / risk;

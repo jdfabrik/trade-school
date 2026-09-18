@@ -18,6 +18,8 @@ import {
   plannedRR,
   profitLoss,
   positionSize,
+  stopIsOnTheRightSide,
+  targetIsOnTheRightSide,
   type Trade,
 } from "./trade";
 import { DEFAULT_RULES, type TradingRules } from "./rules";
@@ -44,6 +46,12 @@ export interface Grade {
   /** Weighted average of the checks, 0 to 1. */
   score: number;
   letter: Letter;
+  /**
+   * Set when a hard rule was broken and the letter was capped because of it.
+   * Nine tidy habits must not carry a trade that broke the one rule that
+   * decides whether the account survives.
+   */
+  cappedBy: string | null;
   /** Reported alongside the grade, never folded into it. */
   profitable: boolean | null;
   pnl: number;
@@ -86,6 +94,7 @@ export function gradeTrade(
 
   const perUnit = riskPerUnit(trade);
   const hasStop = Number.isFinite(perUnit);
+  const stopWrongSide = trade.stop !== null && !stopIsOnTheRightSide(trade);
   const riskPct = riskPercent(trade);
   const rr = plannedRR(trade);
   const pnl = profitLoss(trade);
@@ -99,7 +108,9 @@ export function gradeTrade(
     passed: hasStop,
     detail: hasStop
       ? `Stop at ${money(trade.stop as number)}, ${money(perUnit)} per share from entry.`
-      : "No stop recorded for this trade.",
+      : stopWrongSide
+        ? `The stop at ${money(trade.stop as number)} sits ${trade.direction === "long" ? "above" : "below"} the entry at ${money(trade.entry)}. On a ${trade.direction} that is the wrong side of the entry: it would close the trade as it moved in your favour, and it defines no risk at all.`
+        : "No stop recorded for this trade.",
     advice:
       "Decide where you are wrong before you enter, and place the order the moment you are filled. Without a stop you have no defined risk, no position size and no way to measure the trade afterwards.",
   });
@@ -151,6 +162,7 @@ export function gradeTrade(
   if (Number.isFinite(rr)) {
     rrScore = rr >= minRR ? 1 : clamp01(rr / minRR);
   }
+  const targetWrongSide = trade.target !== null && !targetIsOnTheRightSide(trade);
   checks.push({
     id: "reward-risk",
     label: `Planned reward at least ${threshold(minRR)}:1`,
@@ -159,7 +171,9 @@ export function gradeTrade(
     passed: Number.isFinite(rr) && rr >= minRR - 1e-9,
     detail: Number.isFinite(rr)
       ? `Target was ${rr.toFixed(2)}:1 against the stop.`
-      : "No target recorded, so the trade had no planned reward.",
+      : targetWrongSide
+        ? `Target at ${trade.target} sits ${trade.direction === "long" ? "below" : "above"} the entry at ${trade.entry}. On a ${trade.direction} that is not a profit — hitting it would mean a loss.`
+        : "No target recorded, so the trade had no planned reward.",
     advice: `Know what you stand to make before you risk anything. At your ${threshold(minRR)}:1 threshold you need to be right about ${Math.round((1 / (1 + minRR)) * 100)}% of the time to break even. The lower the reward, the more often you have to be right.`,
   });
 
@@ -251,15 +265,56 @@ export function gradeTrade(
   const score = clamp01(
     checks.reduce((n, c) => n + c.weight * clamp01(c.score), 0) / totalWeight,
   );
-  const letter = letterFor(score);
   const failed = checks.filter((c) => !c.passed);
   const profitable = Number.isFinite(pnl) ? pnl > 0 : null;
+
+  /*
+   * Hard rules. Everything else is a deduction; these are conditions. Averaging
+   * them away would let a trade with no stop, or one risking several times the
+   * limit, still come back an A because the setup was named and a screenshot
+   * was attached — which is exactly the reasoning this site exists to argue
+   * against.
+   */
+  const ceilings: { when: boolean; cap: Letter; reason: string }[] = [
+    {
+      when: !hasStop,
+      cap: "D",
+      reason: "no usable stop, so the trade had no defined risk",
+    },
+    {
+      when: hasStop && Number.isFinite(riskPct) && riskPct > maxRiskPct * 2,
+      cap: "D",
+      reason: `risk of ${riskPct.toFixed(2)}% is more than double the ${threshold(maxRiskPct)}% limit you set`,
+    },
+    {
+      when: hasStop && Number.isFinite(riskPct) && riskPct > maxRiskPct + 1e-9,
+      cap: "B",
+      reason: `risk of ${riskPct.toFixed(2)}% is over the ${threshold(maxRiskPct)}% limit you set`,
+    },
+    {
+      when: targetWrongSide,
+      cap: "C",
+      reason: "the target was on the wrong side of the entry",
+    },
+  ];
+
+  const ORDER: Letter[] = ["A", "B", "C", "D", "F"];
+  let letter = letterFor(score);
+  let cappedBy: string | null = null;
+  for (const c of ceilings) {
+    if (!c.when) continue;
+    if (ORDER.indexOf(letter) < ORDER.indexOf(c.cap)) {
+      letter = c.cap;
+      cappedBy = c.reason;
+    }
+  }
 
   return {
     checks,
     failed,
     score,
     letter,
+    cappedBy,
     profitable,
     pnl,
     headline: headlineFor(letter, profitable),
