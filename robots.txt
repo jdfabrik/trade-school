@@ -1,0 +1,4 @@
+User-Agent: *
+Allow: /
+
+Sitemap: https://jdfabrik.github.io/trade-school/sitemap.xml
