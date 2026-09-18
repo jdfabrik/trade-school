@@ -82,6 +82,7 @@ export function blankTrade(): Trade {
     stopMovedAgainst: false,
     tradesToday: 1,
     minutesSincePriorLoss: null,
+    stopPlannedBeforeEntry: true,
   };
 }
 
@@ -111,6 +112,7 @@ const CSV_COLUMNS: { key: keyof Trade; heading: string }[] = [
   { key: "stopMovedAgainst", heading: "Stop moved against you" },
   { key: "tradesToday", heading: "Trades that day" },
   { key: "minutesSincePriorLoss", heading: "Minutes since the last loss" },
+  { key: "stopPlannedBeforeEntry", heading: "Stop planned before entry" },
 ];
 
 export function toCsv(trades: Trade[]): string {
@@ -311,6 +313,11 @@ export function fromCsv(text: string): ImportResult {
       setup: cell(row, "setup"),
       planNote: cell(row, "planNote"),
       stopMovedAgainst: cell(row, "stopMovedAgainst").toLowerCase() === "true",
+      // absent means "not asked", which must not read as an admission
+      stopPlannedBeforeEntry:
+        cell(row, "stopPlannedBeforeEntry").trim() === ""
+          ? undefined
+          : cell(row, "stopPlannedBeforeEntry").toLowerCase() === "true",
       tradesToday: Number.isFinite(tradesToday) ? tradesToday : base.tradesToday,
       minutesSincePriorLoss: minutes === undefined ? null : minutes,
       // deliberately not carried: the image is not in the file

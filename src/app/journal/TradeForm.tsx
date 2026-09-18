@@ -10,7 +10,7 @@ import { gradeTrade } from "@/lib/grade";
 import { addTrade, blankTrade, newTradeId } from "@/lib/journal";
 import { journalStore, rulesStore } from "@/lib/clientStore";
 import { loadAccountSize, saveAccountSize } from "@/lib/rules";
-import { positionSize, riskPercent, riskPerUnit, plannedRR } from "@/lib/trade";
+import { affordableSize, riskPercent, riskPerUnit, plannedRR } from "@/lib/trade";
 import { SETUP_NAMES } from "@/content/setups";
 import { readChart, rolesFor, READER_DOWNLOAD_MB } from "@/lib/ocr";
 import { getShot } from "@/lib/screenshots";
@@ -210,6 +210,7 @@ export default function TradeForm() {
       setup: setup.trim(),
       planNote: wroteReason === "yes" ? note.trim() || "Written down before entering." : "",
       stopMovedAgainst: movedStop === "yes",
+      stopPlannedBeforeEntry: plannedStop === "yes",
       tradesToday: Number(tradesToday) || 1,
       minutesSincePriorLoss:
         minutesSince.trim() === "" ? null : Number(minutesSince) || 0,
@@ -217,38 +218,28 @@ export default function TradeForm() {
     };
   }, [
     accountSize, direction, entry, stop, noStop, target, noTarget, exit, stillIn,
-    size, setup, note, wroteReason, movedStop, tradesToday, minutesSince, shot,
-    symbol, saved,
+    size, setup, note, wroteReason, movedStop, plannedStop, tradesToday,
+    minutesSince, shot, symbol, saved,
   ]);
 
-  // A stop the trader admits they added after entering does not count as having
-  // decided where they were wrong beforehand.
-  const graded = useMemo(() => {
-    const t = plannedStop === "no" ? { ...draft, stop: draft.stop, planNote: draft.planNote } : draft;
-    const g = gradeTrade(t, rules);
-    if (plannedStop === "no") {
-      const check = g.checks.find((c) => c.id === "stop-set");
-      if (check && check.passed) {
-        check.passed = false;
-        check.score = 0;
-        check.detail = "The stop was added after entering, not decided beforehand.";
-        g.failed.unshift(check);
-        const total = g.checks.reduce((n, c) => n + c.weight, 0);
-        g.score = g.checks.reduce((n, c) => n + c.weight * c.score, 0) / total;
-        g.letter =
-          g.score >= 0.9 ? "A" : g.score >= 0.8 ? "B" : g.score >= 0.7 ? "C" : g.score >= 0.6 ? "D" : "F";
-      }
-    }
-    return g;
-  }, [draft, rules, plannedStop]);
+  // gradeTrade handles the stop-timing answer itself, because it is part of the
+  // trade. Patching the returned Grade here previously desynced the headline
+  // from the letter, and the answer was lost the moment the trade was saved.
+  const graded = useMemo(() => gradeTrade(draft, rules), [draft, rules]);
 
   const perUnit = riskPerUnit(draft);
   const riskPct = riskPercent(draft);
   const rr = plannedRR(draft);
-  const suggested =
+  // Capped by what the account can actually buy. The risk rule alone once
+  // recommended 24,999 shares — $2.5m of stock — on a $25,000 account, because
+  // a very tight stop makes the formula ask for a very large position.
+  const sizing =
     !noStop && Number.isFinite(perUnit) && draft.entry > 0
-      ? positionSize(accountSize, rules.maxRiskPct, draft.entry, draft.stop as number)
-      : NaN;
+      ? affordableSize(accountSize, rules.maxRiskPct, draft.entry, draft.stop as number, {
+          explain: true,
+        })
+      : null;
+  const suggested = sizing ? sizing.size : NaN;
 
   const ready = draft.entry > 0 && draft.size > 0;
 
@@ -480,15 +471,33 @@ export default function TradeForm() {
                 Number.isFinite(suggested) ? (
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="text-muted">
-                      Your {rules.maxRiskPct}% limit allows{" "}
-                      <strong className="tabular text-fg">
-                        {Math.floor(suggested).toLocaleString()}
-                      </strong>
-                      .
+                      {sizing?.limitedByCash ? (
+                        <>
+                          Your {rules.maxRiskPct}% limit would allow{" "}
+                          <strong className="tabular text-fg">
+                            {Math.floor(sizing.byRisk).toLocaleString()}
+                          </strong>
+                          , but {money(accountSize)} only buys{" "}
+                          <strong className="tabular text-fg">
+                            {suggested.toLocaleString()}
+                          </strong>
+                          . A stop this tight is too tight to size the trade
+                          properly — it is not an invitation to buy more than you
+                          can pay for.
+                        </>
+                      ) : (
+                        <>
+                          Your {rules.maxRiskPct}% limit allows{" "}
+                          <strong className="tabular text-fg">
+                            {suggested.toLocaleString()}
+                          </strong>
+                          .
+                        </>
+                      )}
                     </span>
                     <button
                       type="button"
-                      onClick={() => setSize(String(Math.floor(suggested)))}
+                      onClick={() => setSize(String(suggested))}
                       className="rounded-lg border border-border px-2 py-1 text-xs transition-colors hover:border-accent hover:text-accent"
                     >
                       Use that

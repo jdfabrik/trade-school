@@ -99,14 +99,14 @@ describe("breaking a hard rule cannot be averaged away", () => {
    * against everywhere else.
    */
   it("risking twice the limit cannot earn an A", () => {
-    const g = gradeTrade(trade({ size: 500 })); // 2% of 25k
+    const g = gradeTrade(trade({ entry: 10, stop: 9, target: 13, size: 500 })); // 2% of 25k
     expect(g.checks.find((c) => c.id === "risk-size")!.passed).toBe(false);
     expect(g.letter).not.toBe("A");
   });
 
   it("risking four times the limit is worse than twice", () => {
-    const twice = gradeTrade(trade({ size: 500 }));
-    const four = gradeTrade(trade({ size: 1000 }));
+    const twice = gradeTrade(trade({ entry: 10, stop: 9, target: 13, size: 500 }));
+    const four = gradeTrade(trade({ entry: 10, stop: 9, target: 13, size: 1000 }));
     expect(four.score).toBeLessThan(twice.score);
     expect(["D", "F"]).toContain(four.letter);
   });
@@ -123,7 +123,9 @@ describe("breaking a hard rule cannot be averaged away", () => {
   });
 
   it("the grade explains which hard rule capped it", () => {
-    const g = gradeTrade(trade({ size: 500 }));
+    // entry 10 / stop 9 / 500 units: $500 risk on 25k = 2%, but only $5,000 of
+    // stock, so this breaches the risk rule WITHOUT breaching affordability
+    const g = gradeTrade(trade({ entry: 10, stop: 9, target: 13, size: 500 }));
     expect(g.cappedBy).toBeTruthy();
     expect(g.cappedBy!.toLowerCase()).toContain("risk");
   });

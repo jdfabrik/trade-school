@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Browser-only audit harness, pasted into the console by hand. Not part of
+    // the app, not bundled, and written for a plain browser rather than Next.
+    "test-fixtures/**",
+    // Vendored, minified third-party recogniser. Not our code to lint.
+    "public/ocr/**",
   ]),
 ]);
 

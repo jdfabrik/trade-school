@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Calculator from "@/components/Calculator";
 import { Callout, Narrow, PageHeader } from "@/components/ui";
 import { TOOLS } from "@/content/tools";
+import type { WidgetId } from "@/content/types";
+import LessonWidget from "@/components/widgets/registry";
 
 export const metadata: Metadata = {
   title: "Calculators",
@@ -26,6 +28,35 @@ const ORDERED = [
   ...ORDER.map((id) => TOOLS.find((t) => t.id === id)).filter((t) => t !== undefined),
   ...TOOLS.filter((t) => !ORDER.includes(t.id)),
 ];
+
+/**
+ * A chart to sit under the calculator that does the same sum.
+ *
+ * Typing numbers into boxes teaches the formula. Dragging a stop across a chart
+ * teaches what the formula is for, which is the part that survives the week. So
+ * each of these hangs off the calculator it belongs to rather than living on a
+ * page of its own, and the note above it says plainly that the two are the same
+ * arithmetic.
+ *
+ * Only the id and the caption cross into the interactive part, which is what a
+ * calculator's own compute function could never do.
+ */
+const CHART_AFTER: Record<string, { id: WidgetId; lead: string; caption: string }> = {
+  "position-size": {
+    id: "sizing-playground",
+    lead:
+      "Same sum, drawn instead of typed. The boxes above and the chart below work out the position exactly the same way — the chart just lets you put the stop somewhere and see what it costs you.",
+    caption:
+      "Drag the stop further from the entry and watch the share count fall while the money at risk stays where you set it. That is the whole formula, moving.",
+  },
+  breakeven: {
+    id: "reward-risk-playground",
+    lead:
+      "Same two sums, drawn instead of typed. Moving the target on this chart changes the reward:risk in the calculator above it, and the win rate you need follows from that one number.",
+    caption:
+      "Pull the target further from the entry, then look at how far the win rate you need drops. Pull it in close and watch how often you would have to be right.",
+  },
+};
 
 export default function ToolsPage() {
   return (
@@ -65,9 +96,20 @@ export default function ToolsPage() {
       </nav>
 
       <div className="mt-6 space-y-5">
-        {ORDERED.map((tool) => (
-          <Calculator key={tool.id} toolId={tool.id} />
-        ))}
+        {ORDERED.map((tool) => {
+          const chart = CHART_AFTER[tool.id];
+          return (
+            <div key={tool.id}>
+              <Calculator toolId={tool.id} />
+              {chart && (
+                <>
+                  <p className="mt-5 text-sm text-muted">{chart.lead}</p>
+                  <LessonWidget id={chart.id} caption={chart.caption} />
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </Narrow>
   );

@@ -43,6 +43,15 @@ export interface Trade {
   tradesToday: number;
   /** Minutes between your last losing trade and this one. Null if not applicable. */
   minutesSincePriorLoss: number | null;
+  /**
+   * Was the stop decided before entering, rather than worked out afterwards?
+   *
+   * Part of the trade, not a screen effect. It used to be asked on the form,
+   * used to lower the grade there, and then thrown away at save — so the same
+   * trade graded D on the form and B in the journal. Optional so that trades
+   * logged before it existed are not retroactively marked down.
+   */
+  stopPlannedBeforeEntry?: boolean;
   /** Key into the local screenshot store. */
   screenshotId?: string;
   /** Free-text review written after the fact. */
@@ -212,4 +221,50 @@ export function cumulativeR(rs: number[]): number[] {
 
 export function isClosed(trade: Trade): boolean {
   return trade.exit !== null && Number.isFinite(trade.exit);
+}
+
+/**
+ * The size the risk rule allows, capped by what the account can actually buy.
+ *
+ * Without the cap a very tight stop makes the risk formula recommend a position
+ * far larger than the account: a 1-cent stop on a $100 share told a $25,000
+ * account to buy 24,999 shares, which is $2.5m of stock. No broker fills that
+ * and no cash account holds it, and the site was the thing recommending it.
+ *
+ * This is deliberately the plain cash limit. A margin account can exceed it,
+ * and a trader who knows that can type their own number — but the suggestion
+ * the site volunteers should be one that can actually be executed.
+ */
+export function affordableSize(
+  accountSize: number,
+  riskPct: number,
+  entry: number,
+  stop: number,
+): number;
+export function affordableSize(
+  accountSize: number,
+  riskPct: number,
+  entry: number,
+  stop: number,
+  options: { explain: true },
+): { size: number; limitedByCash: boolean; byRisk: number; byCash: number };
+export function affordableSize(
+  accountSize: number,
+  riskPct: number,
+  entry: number,
+  stop: number,
+  options?: { explain: true },
+) {
+  const byRisk = positionSize(accountSize, riskPct, entry, stop);
+  const byCash = entry > 0 ? accountSize / entry : NaN;
+  const size = Math.floor(Math.min(byRisk, byCash));
+  const limitedByCash = Number.isFinite(byRisk) && Number.isFinite(byCash) && byCash < byRisk;
+  return options?.explain
+    ? { size, limitedByCash, byRisk, byCash }
+    : size;
+}
+
+/** What the position is worth, which is not the same as what it risks. */
+export function notional(trade: Pick<Trade, "entry" | "size">): number {
+  return trade.entry * trade.size;
 }

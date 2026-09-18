@@ -12,6 +12,7 @@ import { questionsForLesson } from "@/content/questions";
 import { TOOLS } from "@/content/tools";
 import type { Block } from "@/content/types";
 import { Callout, Narrow, PageHeader, Rich } from "@/components/ui";
+import LessonWidget from "@/components/widgets/registry";
 
 export function generateStaticParams() {
   return LESSONS.map((l) => ({ slug: l.slug }));
@@ -169,6 +170,9 @@ function BlockView({ block }: { block: Block }) {
 
       {block.table && <LessonTable {...block.table} />}
       {block.worked && <Worked {...block.worked} />}
+      {block.widget && (
+        <LessonWidget id={block.widget.id} caption={block.widget.caption} />
+      )}
       {block.callout && (
         <Callout tone={block.callout.tone}>
           <Rich text={block.callout.text} />

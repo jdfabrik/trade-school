@@ -91,6 +91,16 @@ export const LESSONS: Lesson[] = [
         },
       },
       {
+        paragraphs: [
+          "That table is fixed at six losses and at ten, and your own cold stretch will be neither. So here is the same arithmetic with the dials in your hands. Set what you risk on a trade, set how long the run of losses goes on, and read what it would take to get back to level.",
+        ],
+        widget: {
+          id: "streak-simulator",
+          caption:
+            "Walk the risk slider from 1% up to 10% without touching anything else. The account damage roughly multiplies. The gain you need to undo it grows far faster than that, and it is the second number that ends accounts.",
+        },
+      },
+      {
         heading: "The order of operations",
         paragraphs: [
           "This is the sequence, and it only works in this order:",
@@ -151,6 +161,16 @@ export const LESSONS: Lesson[] = [
         },
       },
       {
+        paragraphs: [
+          "Reading that is not the same as feeling it. Put the stop somewhere on the chart below and let the size fall out of it, the way it has to on a real trade.",
+        ],
+        widget: {
+          id: "sizing-playground",
+          caption:
+            "Move the stop close to the entry, then a long way from it. The number of shares swings enormously while the money you stand to lose does not move at all. Then read the next section, which is about exactly what you just watched.",
+        },
+      },
+      {
         heading: "The part that catches people out",
         paragraphs: [
           "Notice which way round it runs. The stop is decided by the chart — by where the idea stops making sense. The size then falls out of the arithmetic. You never choose a size first and then find somewhere to put the stop.",
@@ -205,6 +225,16 @@ export const LESSONS: Lesson[] = [
         ],
       },
       {
+        paragraphs: [
+          "That last point is the one people argue with, so try it rather than take it. Below is a stretch of practice prices with a trade already on. Bring the stop in toward the entry and watch how little movement it takes to reach you.",
+        ],
+        widget: {
+          id: "stop-noise",
+          caption:
+            "Tighten the stop until it gets hit, then look at where price went afterwards. A stop sitting inside the ordinary wobble does not save you from being wrong — it just makes you wrong more often, at full price each time.",
+        },
+      },
+      {
         callout: {
           tone: "warn",
           text: "Never place a stop at a round number or a fixed dollar amount just because it is tidy. Round numbers are where everyone else's stops sit, and price has a habit of reaching for them.",
@@ -216,6 +246,16 @@ export const LESSONS: Lesson[] = [
           "Once the stop is placed, it moves in one direction only: toward profit. Never away.",
           "Widening a stop because the trade has gone against you feels like patience. It is not. It is the moment you stop trading your plan and start hoping, and it converts a planned small loss into an unplanned large one. Almost every catastrophic retail loss you will ever read about contains this step.",
         ],
+      },
+      {
+        paragraphs: [
+          "This is the one to spend a few minutes on. The trade below is already open and already going the wrong way. Move its stop wherever you like, let the rest of the days play out, and see what each choice cost.",
+        ],
+        widget: {
+          id: "moving-stop",
+          caption:
+            "Take the loss where you planned it, then run the same trade again and give the stop more room. Do it a few times. Sometimes the extra room rescues you, which is precisely why the habit survives long enough to do real damage.",
+        },
       },
       {
         heading: "Moving a stop to breakeven",
@@ -263,6 +303,16 @@ export const LESSONS: Lesson[] = [
         },
       },
       {
+        paragraphs: [
+          "Those three prices — where you get in, where you are wrong, where you would take the money — are the whole of it. Move them around and watch what each arrangement is worth.",
+        ],
+        widget: {
+          id: "reward-risk-playground",
+          caption:
+            "Drag the target further from the entry and watch two things move together: what the trade pays if it works, and how rarely you can afford to be right. Then drag it in close and see the win rate you would have to keep up.",
+        },
+      },
+      {
         heading: "Expectancy",
         paragraphs: [
           "Add up your R results and divide by the number of trades. That average is your expectancy — what you make, on average, per trade, measured in units of your own risk.",
@@ -276,6 +326,16 @@ export const LESSONS: Lesson[] = [
             ["+3, +3, −1, −1", "+1.00R", "A real edge. Every trade is worth 1R on average."],
             ["+1, −1, −1, −1", "−0.50R", "Losing. The winners are too small for the hit rate."],
           ],
+        },
+      },
+      {
+        paragraphs: [
+          "Four trades make a tidy table and tell you nothing about what a hundred of them feel like. Set a win rate and a reward below, then let a run play out.",
+        ],
+        widget: {
+          id: "expectancy-simulator",
+          caption:
+            "Set 40% and 2:1 — settings that make money — then press run again and again without changing a thing. The runs land far apart. The long losing stretches in them are where people quit a method that was working.",
         },
       },
       {
@@ -318,6 +378,18 @@ export const LESSONS: Lesson[] = [
           "A setup is a specific, repeatable situation you have decided in advance is worth risking money on. It has conditions you can check, an entry, a place the stop goes, and a way it typically fails.",
           "The test is simple: could you describe it to another trader precisely enough that they would recognise the same situation tomorrow? If not, it is not a setup yet.",
         ],
+      },
+      {
+        heading: "Reading a single candle",
+        paragraphs: [
+          "Before you can describe a situation precisely, you have to be able to read what is in front of you. Almost every chart a trader looks at is drawn as candles, and each one holds four numbers: where the period opened, where it closed, and the highest and lowest price reached in between. The thick part is the distance from open to close; the thin lines above and below are how far price got and could not stay.",
+          "Take a minute with the chart below before going on.",
+        ],
+        widget: {
+          id: "candle-anatomy",
+          caption:
+            "Pick a candle with a long thin line and almost no thick part. Price travelled a long way and gave it all back inside one period — a different story from a candle that closed right at its high, even when the two end up at a similar price.",
+        },
       },
       {
         heading: "Why you need it written down",

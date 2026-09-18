@@ -20,6 +20,7 @@ import {
   positionSize,
   stopIsOnTheRightSide,
   targetIsOnTheRightSide,
+  notional,
   type Trade,
 } from "./trade";
 import { DEFAULT_RULES, type TradingRules } from "./rules";
@@ -95,6 +96,9 @@ export function gradeTrade(
   const perUnit = riskPerUnit(trade);
   const hasStop = Number.isFinite(perUnit);
   const stopWrongSide = trade.stop !== null && !stopIsOnTheRightSide(trade);
+  // Absent on trades logged before the question existed; absence is not an
+  // admission, so those are not marked down retroactively.
+  const plannedBefore = trade.stopPlannedBeforeEntry !== false;
   const riskPct = riskPercent(trade);
   const rr = plannedRR(trade);
   const pnl = profitLoss(trade);
@@ -104,9 +108,11 @@ export function gradeTrade(
     id: "stop-set",
     label: "Stop loss set before entry",
     weight: 3,
-    score: hasStop ? 1 : 0,
-    passed: hasStop,
-    detail: hasStop
+    score: hasStop && plannedBefore ? 1 : 0,
+    passed: hasStop && plannedBefore,
+    detail: hasStop && !plannedBefore
+      ? `The stop was added after entering, not decided beforehand. Worked out once the trade is on, it is a reaction to where price already went.`
+      : hasStop
       ? `Stop at ${money(trade.stop as number)}, ${money(perUnit)} per share from entry.`
       : stopWrongSide
         ? `The stop at ${money(trade.stop as number)} sits ${trade.direction === "long" ? "above" : "below"} the entry at ${money(trade.entry)}. On a ${trade.direction} that is the wrong side of the entry: it would close the trade as it moved in your favour, and it defines no risk at all.`
@@ -248,7 +254,23 @@ export function gradeTrade(
       "After a loss, stand up and let five minutes pass before you look for the next trade. Set a hard cap on the number of trades before the session starts, so boredom cannot add to it later.",
   });
 
-  /* 9. Evidence — the screenshot. Asked for, but low weight. */
+  /* 9. A position the account could actually buy. */
+  const positionValue = notional(trade);
+  const affordable = !Number.isFinite(positionValue) || positionValue <= trade.accountSize * 1.01;
+  checks.push({
+    id: "affordable",
+    label: "Position the account could actually buy",
+    weight: 2,
+    score: affordable ? 1 : 0,
+    passed: affordable,
+    detail: affordable
+      ? `Position worth ${money(positionValue)} against a ${money(trade.accountSize)} account.`
+      : `Position worth ${money(positionValue)} on a ${money(trade.accountSize)} account. No cash account holds that, and the risk rule alone will recommend it whenever the stop is very tight.`,
+    advice:
+      "A very tight stop makes the risk formula ask for a very large position. Check the position against the cash you actually have as well as against the risk: if the two disagree, the stop is too tight to size the trade properly, not an invitation to buy more than you can pay for.",
+  });
+
+  /* 10. Evidence — the screenshot. Asked for, but low weight. */
   const hasShot = Boolean(trade.screenshotId);
   checks.push({
     id: "evidence",
@@ -296,18 +318,35 @@ export function gradeTrade(
       cap: "C",
       reason: "the target was on the wrong side of the entry",
     },
+    {
+      when: !affordable,
+      cap: "D",
+      reason: "the position was worth more than the whole account",
+    },
+    {
+      when: hasStop && !plannedBefore,
+      cap: "C",
+      reason:
+        "the stop was worked out after entering rather than decided beforehand",
+    },
   ];
 
   const ORDER: Letter[] = ["A", "B", "C", "D", "F"];
-  let letter = letterFor(score);
+  const earned = letterFor(score);
+  let letter = earned;
   let cappedBy: string | null = null;
+
+  // Apply the strongest applicable ceiling, and report THAT one — reporting
+  // whichever happened to come last in the list would name a lesser reason for
+  // a harsher grade.
   for (const c of ceilings) {
     if (!c.when) continue;
-    if (ORDER.indexOf(letter) < ORDER.indexOf(c.cap)) {
+    if (ORDER.indexOf(c.cap) > ORDER.indexOf(letter)) {
       letter = c.cap;
       cappedBy = c.reason;
     }
   }
+  if (letter === earned) cappedBy = null;
 
   return {
     checks,
@@ -317,20 +356,40 @@ export function gradeTrade(
     cappedBy,
     profitable,
     pnl,
-    headline: headlineFor(letter, profitable),
+    // built from the FINAL letter, after any cap. It used to be baked earlier,
+    // so a D could render under "Nothing to fix" in the largest type on the card.
+    // Built from the FINAL letter and the real failure count. It used to be
+    // baked from a pre-penalty letter and ignored the checklist, so a card could
+    // read "Nothing to fix" in its largest type above four failed checks.
+    headline: headlineFor(letter, profitable, failed.length),
   };
 }
 
-function headlineFor(letter: Letter, profitable: boolean | null): string {
+function headlineFor(
+  letter: Letter,
+  profitable: boolean | null,
+  failedCount: number,
+): string {
+  // "Nothing to fix" is only ever true when nothing failed. Saying it above a
+  // list of failed checks teaches the opposite of what the list is for.
+  const clean = failedCount === 0;
+
   if (profitable === null) {
     return letter === "A" || letter === "B"
-      ? "Well set up. Now let the plan play out."
+      ? clean
+        ? "Well set up. Now let the plan play out."
+        : "Mostly sound, but fix the items below before the trade closes if you still can."
       : "Fix this before the trade closes, if you still can.";
   }
   const good = letter === "A" || letter === "B";
-  if (good && profitable) return "Good trade, good result. This is the one to repeat.";
+  if (good && profitable)
+    return clean
+      ? "Good trade, good result. This is the one to repeat."
+      : "It paid, but not everything was done properly. The items below are what to tighten.";
   if (good && !profitable)
-    return "Good trade, bad result. Nothing to fix — this is what a normal loss looks like.";
+    return clean
+      ? "Good trade, bad result. Nothing to fix — this is what a normal loss looks like."
+      : "A normal loss, but not a clean one. The loss is fine; the items below are not.";
   if (!good && profitable)
     return "Bad trade, good result. This is the dangerous one: it pays you for a habit that will not keep paying.";
   return "Bad trade, bad result. The loss is the cheap part; the habit is what costs you.";
