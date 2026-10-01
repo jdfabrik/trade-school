@@ -124,7 +124,10 @@ const CASES = [
   {
     name: "clear-dark-orderlines",
     note: "Dark platform, entry/stop/target order-line tags. The realistic good case.",
-    mustFind: [48.6, 47.9, 50.0],
+    // 50.0 is NOT on the rendered image: the TARGET line falls above the top of
+    // the price axis, so the tag is never drawn. Scoring against it marked an
+    // honest "missing" as a miss. See test-fixtures/ground-truth.json.
+    mustFind: [48.6, 47.9],
     draw(ctx, W, H) {
       const t = THEMES.dark;
       const g = drawChart(ctx, W, H, t, 101, 48.5);

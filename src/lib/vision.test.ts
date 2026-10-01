@@ -94,6 +94,58 @@ describe("a value is only visible when it really was", () => {
     );
     expect(trade.entry.region).toBeUndefined();
   });
+  it("accepts a region given as [x,y,w,h], which is the shape models actually send", () => {
+    const { trade } = parseExtraction(
+      reply({ entry: field({ status: "visible", value: 10, confidence: 1, region: [0, 0.1, 0.15, 0.25] }) }),
+    );
+    expect(trade.entry.region).toEqual({ x: 0, y: 0.1, w: 0.15, h: 0.25 });
+  });
+});
+
+/*
+ * Measured against the fixture screenshots: on every image where the direction
+ * was not printed, the model reported it anyway as "inferred", reasoning from
+ * the stop sitting below the entry.
+ *
+ * That inference cannot be allowed through, because the grader's own check asks
+ * whether the stop is on the right side of the entry. Deriving direction from
+ * that comparison makes the check unable to fail, so a trader who shorted and
+ * put the stop below the entry — a real and costly mistake — would be told the
+ * stop was fine.
+ */
+describe("a direction that could only have come from the stop is not a direction", () => {
+  const vis = (v: unknown) => field({ status: "visible", value: v, confidence: 1 });
+
+  it("drops it, and says why", () => {
+    const { trade, issues } = parseExtraction(
+      reply({
+        direction: field({ status: "inferred", value: "long", confidence: 0.95, note: "stop is below entry" }),
+        entry: vis(48.6),
+        stop: vis(47.9),
+      }),
+    );
+    expect(trade.direction.status).toBe("missing");
+    expect(anyValue(trade.direction)).toBeNull();
+    expect(trade.direction.note).toMatch(/stop/i);
+    expect(issues.join(" ")).toMatch(/bought or sold/i);
+  });
+
+  it("keeps an inferred direction when there was no stop to infer it from", () => {
+    const { trade } = parseExtraction(
+      reply({
+        direction: field({ status: "inferred", value: "short", confidence: 0.8 }),
+        entry: vis(48.6),
+      }),
+    );
+    expect(anyValue(trade.direction)).toEqual({ value: "short", status: "inferred" });
+  });
+
+  it("never touches a direction the image actually stated", () => {
+    const { trade } = parseExtraction(
+      reply({ direction: vis("BUY"), entry: vis(131.25), stop: vis(129.8) }),
+    );
+    expect(visibleValue(trade.direction)).toBe("long");
+  });
 });
 
 describe("a broken reply extracts nothing rather than something wrong", () => {

@@ -178,6 +178,9 @@ Rules you must not break:
 - Do not infer direction from the colour of a candle or from profit being positive.
   Only report direction as visible if the image says BUY/SELL/LONG/SHORT or shows
   an order marker that states it.
+- Never work direction out from where the stop or target sits relative to the entry.
+  That is the same comparison the trade is later graded on, so using it would hide
+  the mistake. If no BUY/SELL/LONG/SHORT is printed, direction is missing.
 - Do not convert currencies or units. Report what is printed.
 - If the image shows more than one trade, say so in issues and extract nothing.
 - If it is not a trade screenshot at all, say so in issues and mark every field missing.
@@ -302,16 +305,20 @@ function readObservation<T>(raw: unknown, coerce: (v: unknown) => T | null): Obs
   const finalStatus: FieldStatus =
     (status === "visible" || status === "inferred") && value === null ? "unreadable" : status;
 
-  const region =
-    o.region && typeof o.region === "object"
-      ? (() => {
-          const r = o.region as Record<string, unknown>;
-          const nums = ["x", "y", "w", "h"].map((k) => Number(r[k]));
-          return nums.every((n) => Number.isFinite(n) && n >= -0.1 && n <= 1.1)
-            ? { x: nums[0], y: nums[1], w: nums[2], h: nums[3] }
-            : undefined;
-        })()
+  // Models send this either as {x,y,w,h} or as [x,y,w,h], whatever the prompt
+  // asked for. Measured: every region on the fixture screenshots came back as
+  // an array and was silently thrown away, which is why none of them ever
+  // reached the screen.
+  const region = (() => {
+    if (!o.region || typeof o.region !== "object") return undefined;
+    const r = o.region as Record<string, unknown>;
+    const nums = Array.isArray(o.region)
+      ? o.region.slice(0, 4).map(Number)
+      : ["x", "y", "w", "h"].map((k) => Number(r[k]));
+    return nums.length === 4 && nums.every((n) => Number.isFinite(n) && n >= -0.1 && n <= 1.1)
+      ? { x: nums[0], y: nums[1], w: nums[2], h: nums[3] }
       : undefined;
+  })();
 
   return {
     status: finalStatus,
@@ -378,9 +385,36 @@ export function parseExtraction(text: string): {
     ? json.issues.filter((i): i is string => typeof i === "string").slice(0, 8)
     : [];
 
+  /*
+   * Refuse a direction that was only worked out from where the stop sits.
+   *
+   * Measured on the fixture screenshots: on all three images where the platform
+   * did not print BUY/SELL, the model still returned a direction, reasoning in
+   * its own note that the stop was below the entry.
+   *
+   * That cannot be allowed through. The grader asks, as one of its checks,
+   * whether the stop is on the right side of the entry. If direction is derived
+   * from that same comparison the check can never fail — so a trader who sold
+   * short and left the stop below the entry, which is a genuinely expensive
+   * mistake, would be told the stop was fine. Better to have no direction and
+   * ask them: it is one tap on the form.
+   */
+  if (
+    trade.direction.status === "inferred" &&
+    typeof trade.entry.value === "number" &&
+    typeof trade.stop.value === "number"
+  ) {
+    trade.direction = {
+      status: "missing",
+      confidence: 0,
+      note: "It worked this out from the stop being on one side of the entry, which is the same thing the grade checks. Tell it yourself below.",
+    };
+    issues.push("Bought or sold was not printed on the image, so it has been left for you to answer.");
+  }
+
   return {
     trade,
-    issues,
+    issues: issues.slice(0, 8),
     ...(typeof json.platform === "string" && json.platform ? { platform: json.platform } : {}),
   };
 }

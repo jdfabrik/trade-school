@@ -94,6 +94,52 @@ export default function ScreenshotReader({
   const conflicts = result ? contradictions(result.trade) : [];
   const evidence = result ? evidenceSummary(result.trade) : null;
 
+  /**
+   * A zoomed crop of the part of the screenshot a value came from.
+   *
+   * WHY THIS IS HERE: measured against the fixture screenshots, the one thing
+   * that got through was a soft image where the model read "48.82" off a tag
+   * that said 48.60 — and reported it as read, at 0.98 confidence, quoting text
+   * it had misread. No amount of parsing catches that; the reply is internally
+   * consistent. The only thing that catches it is a person looking. So put the
+   * pixels next to the number and make looking take a second rather than
+   * requiring them to go and find it on their own chart.
+   *
+   * The region is the model's own claim about where it looked, so it is
+   * labelled as such and never presented as proof.
+   */
+  function Crop({ region }: { region: NonNullable<Extraction["trade"]["entry"]["region"]> }) {
+    if (!image) return null;
+    const BOX_W = 240;
+    const BOX_H = 96;
+
+    // Centre the region in the box and zoom so it spans the width. Zooming out
+    // would defeat the point — the trader has to be able to read the digits —
+    // so the scale never goes below 1:1, and never so far in that a tiny or
+    // badly-reported region fills the box with two pixels.
+    const cx = region.x + region.w / 2;
+    const cy = region.y + region.h / 2;
+    const wanted = BOX_W / Math.max(region.w * image.width, 1);
+    const scale = Math.min(4, Math.max(1, wanted));
+
+    return (
+      <span
+        aria-hidden="true"
+        className="mt-1 block overflow-hidden rounded border border-border bg-surface"
+        style={{
+          width: BOX_W,
+          height: BOX_H,
+          backgroundImage: `url(${image.dataUrl})`,
+          backgroundRepeat: "no-repeat",
+          backgroundSize: `${image.width * scale}px ${image.height * scale}px`,
+          backgroundPosition: `${BOX_W / 2 - cx * image.width * scale}px ${
+            BOX_H / 2 - cy * image.height * scale
+          }px`,
+        }}
+      />
+    );
+  }
+
   /* ----------------------------- closed state ---------------------------- */
 
   if (!open) {
@@ -326,6 +372,15 @@ export default function ScreenshotReader({
                     )}
                     {o.note && (
                       <span className="mt-0.5 block text-xs text-muted">{o.note}</span>
+                    )}
+                    {o.region && usable && (
+                      <>
+                        <Crop region={o.region} />
+                        <span className="mt-0.5 block text-[11px] text-muted">
+                          Where it says it read this. If the number here does not match,
+                          or this is a blank bit of your chart, do not tick it.
+                        </span>
+                      </>
                     )}
                   </label>
                 </li>
